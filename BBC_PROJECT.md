@@ -1,8 +1,8 @@
-# STK — własna edukacyjna kryptowaluta
+# BBC — Bi-Bi-Coin, własna edukacyjna kryptowaluta
 
 ## 1. Cel projektu
 
-Celem projektu **STK** jest stworzenie od podstaw prostej, działającej kryptowaluty i sieci blockchain w C++, przede wszystkim po to, aby praktycznie zrozumieć:
+Celem projektu **BBC** jest stworzenie od podstaw prostej, działającej kryptowaluty i sieci blockchain w C++, przede wszystkim po to, aby praktycznie zrozumieć:
 
 - czym jest portfel i para kluczy kryptograficznych,
 - jak podpisywana jest transakcja,
@@ -36,9 +36,9 @@ Pierwsza wersja będzie:
 Przykład:
 
 ```text
-stk --port 8001 --full-node --miner
-stk --port 8002 --full-node
-stk --port 8003 --wallet
+bbc --port 8001 --full-node --miner
+bbc --port 8002 --full-node
+bbc --port 8003 --wallet
 ```
 
 Dzięki temu całą sieć będzie można początkowo testować na jednym komputerze.
@@ -47,7 +47,7 @@ Dzięki temu całą sieć będzie można początkowo testować na jednym kompute
 
 # 3. Role w systemie
 
-Jedna aplikacja `stk` może pełnić kilka ról jednocześnie.
+Jedna aplikacja `bbc` może pełnić kilka ról jednocześnie.
 
 ## 3.1 Wallet
 
@@ -55,7 +55,7 @@ Wallet odpowiada za:
 
 - wygenerowanie klucza prywatnego,
 - wyliczenie klucza publicznego,
-- utworzenie adresu STK,
+- utworzenie adresu BBC,
 - przechowywanie klucza prywatnego,
 - tworzenie transakcji,
 - podpisywanie transakcji,
@@ -125,7 +125,7 @@ private key
 public key
     |
     v
-address STK
+address BBC
 ```
 
 ## 4.1 Klucz prywatny
@@ -142,7 +142,7 @@ Utrata klucza prywatnego bez backupu oznacza utratę możliwości dysponowania �
 Blockchain nadal może zawierać informację:
 
 ```text
-STK_ABC... = 10 000 STK
+BBC_ABC... = 10 000 BBC
 ```
 
 ale bez klucza prywatnego nie będzie można utworzyć poprawnego podpisu transakcji.
@@ -168,7 +168,7 @@ W rzeczywistej implementacji adres powinien zawierać także wersję/identyfikat
 Przykład:
 
 ```text
-STK_7F3A9C21...
+BBC_7F3A9C21...
 ```
 
 Dzięki temu full node może sprawdzić, czy klucz publiczny podany przez nadawcę rzeczywiście odpowiada adresowi `from`.
@@ -201,7 +201,7 @@ address
 Pierwsza implementacja może przechowywać zaszyfrowany plik:
 
 ```text
-~/.stk/wallet.dat
+~/.bbc/wallet.dat
 ```
 
 Klucz prywatny powinien być zaszyfrowany kluczem wyprowadzonym z hasła użytkownika za pomocą odpowiedniego KDF.
@@ -214,7 +214,7 @@ Nie zapisujemy klucza prywatnego jawnie w pliku tekstowym.
 
 ## 6.1 Podpisy
 
-Rekomendacja dla STK:
+Rekomendacja dla BBC:
 
 **Ed25519**.
 
@@ -272,13 +272,13 @@ Podpis wiąże konkretną treść transakcji z kluczem prywatnym właściciela.
 Jeśli ktoś zmieni:
 
 ```text
-A -> B : 10 STK
+A -> B : 10 BBC
 ```
 
 na:
 
 ```text
-A -> C : 100 STK
+A -> C : 100 BBC
 ```
 
 podpis przestanie być poprawny.
@@ -353,14 +353,14 @@ HASH("A -> B : 11") = zupełnie inne Y
 
 # 8. Model kont
 
-STK używa modelu kont.
+BBC używa modelu kont.
 
 Full node utrzymuje aktualny stan:
 
 ```text
-address_A -> balance: 100 STK, nonce: 7
-address_B -> balance:  20 STK, nonce: 3
-address_C -> balance:   0 STK, nonce: 0
+address_A -> balance: 100 BBC, nonce: 7
+address_B -> balance:  20 BBC, nonce: 3
+address_C -> balance:   0 BBC, nonce: 0
 ```
 
 Blockchain pozostaje historią pozwalającą dojść do tego stanu.
@@ -395,13 +395,13 @@ Kwoty przechowujemy jako liczby całkowite najmniejszej jednostki.
 Przykład:
 
 ```text
-1 STK = 100 000 000 stk-unit
+1 BBC = 100 000 000 bbc-unit
 ```
 
 Czyli:
 
 ```text
-10 STK = 1 000 000 000 stk-unit
+10 BBC = 1 000 000 000 bbc-unit
 ```
 
 Nigdy:
@@ -446,16 +446,16 @@ Ponowne wysłanie tej samej podpisanej transakcji zostanie odrzucone.
 
 # 10. Tworzenie transakcji krok po kroku
 
-A chce wysłać B 10 STK.
+A chce wysłać B 10 BBC.
 
 ## Krok 1 — wallet tworzy dane
 
 ```text
 recipient = address_B
-amount    = 10 STK
-fee       = 0.01 STK
+amount    = 10 BBC
+fee       = 0.01 BBC
 nonce     = następny nonce konta A
-chain_id  = STK_MAINNET
+chain_id  = BBC_MAINNET
 ```
 
 ## Krok 2 — kanoniczna serializacja
@@ -518,9 +518,9 @@ Mempool jest lokalnym zbiorem poprawnych, ale jeszcze niezatwierdzonych w blockc
 ```text
 mempool:
 
-TX1 A -> B : 10 STK
-TX2 D -> E :  5 STK
-TX3 F -> G :  2 STK
+TX1 A -> B : 10 BBC
+TX2 D -> E :  5 BBC
+TX3 F -> G :  2 BBC
 ```
 
 Każdy full node może mieć przez chwilę nieco inny mempool ze względu na opóźnienia sieciowe.
@@ -638,11 +638,11 @@ HASH(header) < target ?
 
 # 15. Dlaczego Proof of Work zabezpiecza historię
 
-Załóżmy, że A ma 10 STK i wysyła dwie poprawnie podpisane transakcje:
+Załóżmy, że A ma 10 BBC i wysyła dwie poprawnie podpisane transakcje:
 
 ```text
-TX1: A -> B : 10 STK
-TX2: A -> C : 10 STK
+TX1: A -> B : 10 BBC
+TX2: A -> C : 10 BBC
 ```
 
 Obie zostały podpisane przez A.
@@ -712,9 +712,9 @@ To nazywa się **reorganizacją blockchaina (reorg)**.
 Załóżmy, że przegrana gałąź zawierała:
 
 ```text
-101B: A -> C : 10 STK
-102B: D -> E :  5 STK
-103B: F -> G :  2 STK
+101B: A -> C : 10 BBC
+102B: D -> E :  5 BBC
+103B: F -> G :  2 BBC
 ```
 
 Po reorgu node ponownie ocenia transakcje.
@@ -731,13 +731,13 @@ są nadal poprawne względem zwycięskiego łańcucha, mogą wrócić do mempool
 Jeśli natomiast zwycięski łańcuch zawiera już:
 
 ```text
-A -> B : 10 STK
+A -> B : 10 BBC
 ```
 
 i A nie ma kolejnych środków, to:
 
 ```text
-A -> C : 10 STK
+A -> C : 10 BBC
 ```
 
 jest już nieważne.
@@ -773,15 +773,15 @@ Blok zawiera specjalną transakcję tworzącą nagrodę dla minera.
 Przykład:
 
 ```text
-block reward = 50 STK
+block reward = 50 BBC
 + transaction fees
 ```
 
-To jedna z metod wprowadzania nowych STK do obiegu.
+To jedna z metod wprowadzania nowych BBC do obiegu.
 
 Reguła emisji musi być częścią protokołu i każdy full node musi ją weryfikować.
 
-Miner nie może sam wpisać sobie dowolnej liczby STK.
+Miner nie może sam wpisać sobie dowolnej liczby BBC.
 
 Jeżeli nagroda przekracza dozwoloną wartość:
 
@@ -801,8 +801,8 @@ Może np. definiować początkowe parametry sieci.
 
 Do decyzji pozostaje, czy:
 
-1. Genesis nie przydziela nikomu monet, a wszystkie STK powstają przez mining,
-2. Genesis tworzy początkową pulę STK,
+1. Genesis nie przydziela nikomu monet, a wszystkie BBC powstają przez mining,
+2. Genesis tworzy początkową pulę BBC,
 3. stosujemy model mieszany.
 
 Dla projektu edukacyjnego interesujący jest wariant 1.
@@ -851,8 +851,8 @@ Nowy node musi wiedzieć, z kim połączyć się po pierwszym uruchomieniu.
 Możemy posiadać kilka adresów bootstrap/seed:
 
 ```text
-seed1.stk.example
-seed2.stk.example
+seed1.bbc.example
+seed2.bbc.example
 ```
 
 Seed nie przechowuje blockchaina w imieniu użytkowników i nie przekazuje wszystkich transakcji.
@@ -923,7 +923,7 @@ Każdy full node:
 Przykładowy katalog noda:
 
 ```text
-~/.stk/
+~/.bbc/
     config.toml
     wallet.dat
     peers.dat
@@ -978,7 +978,7 @@ Pierwsza, prosta wersja może działać tak:
 Node nie powinien przyjmować informacji typu:
 
 ```text
-"A ma 100 STK, zaufaj mi"
+"A ma 100 BBC, zaufaj mi"
 ```
 
 Powinien sam dojść do stanu na podstawie zweryfikowanego blockchaina.
@@ -1014,7 +1014,7 @@ payload_checksum
 payload
 ```
 
-`magic` pozwala odróżnić STK od przypadkowych danych lub innej sieci.
+`magic` pozwala odróżnić BBC od przypadkowych danych lub innej sieci.
 
 ---
 
@@ -1049,7 +1049,7 @@ Na początku API powinno domyślnie nasłuchiwać tylko na `localhost`.
 # 29. Proponowana struktura kodu C++
 
 ```text
-stk/
+bbc/
 ├── CMakeLists.txt
 ├── README.md
 ├── docs/
@@ -1107,43 +1107,43 @@ Podział może ewoluować podczas implementacji.
 ## Wallet
 
 ```text
-stk wallet create
-stk wallet restore
-stk wallet address
-stk wallet balance
-stk wallet backup
+bbc wallet create
+bbc wallet restore
+bbc wallet address
+bbc wallet balance
+bbc wallet backup
 ```
 
 ## Transakcje
 
 ```text
-stk send <address> <amount>
-stk tx get <txid>
+bbc send <address> <amount>
+bbc tx get <txid>
 ```
 
 ## Node
 
 ```text
-stk node start
-stk node status
-stk node peers
-stk node mempool
+bbc node start
+bbc node status
+bbc node peers
+bbc node mempool
 ```
 
 ## Mining
 
 ```text
-stk miner start
-stk miner stop
-stk miner status
+bbc miner start
+bbc miner stop
+bbc miner status
 ```
 
 ## Blockchain
 
 ```text
-stk chain tip
-stk chain block <height/hash>
-stk chain verify
+bbc chain tip
+bbc chain block <height/hash>
+bbc chain verify
 ```
 
 ---
@@ -1227,7 +1227,7 @@ Miner C: 127.0.0.1:8003
 Testujemy:
 
 ```text
-A -> B : 10 STK
+A -> B : 10 BBC
 ```
 
 oraz propagację:
@@ -1277,17 +1277,17 @@ Wyświetlenie:
 ## Test 1 — poprawny przelew
 
 ```text
-A = 100 STK
-B = 0 STK
+A = 100 BBC
+B = 0 BBC
 
-A -> B = 10 STK
+A -> B = 10 BBC
 ```
 
 Po zatwierdzeniu:
 
 ```text
-A = 90 STK - fee
-B = 10 STK
+A = 90 BBC - fee
+B = 10 BBC
 ```
 
 ## Test 2 — fałszywy podpis
@@ -1341,7 +1341,7 @@ invalid account nonce
 
 ## Test 6 — double spend + fork
 
-A ma 10 STK.
+A ma 10 BBC.
 
 ```text
 TX1: A -> B = 10
@@ -1442,17 +1442,17 @@ A = zwykły wallet
 B = wallet + full node
 C = full node + miner
 
-A balance = 100 STK
-B balance = 0 STK
+A balance = 100 BBC
+B balance = 0 BBC
 ```
 
-A chce wysłać B 10 STK.
+A chce wysłać B 10 BBC.
 
 ```text
 1. A tworzy transaction
 
    recipient = B
-   amount = 10 STK
+   amount = 10 BBC
    nonce = N
 
 2. A podpisuje transaction private_A
@@ -1486,8 +1486,8 @@ A chce wysłać B 10 STK.
 
 14. Stan zmienia się:
 
-    A = 90 STK - fee
-    B = 10 STK
+    A = 90 BBC - fee
+    B = 10 BBC
 
 15. Kolejne bloki zwiększają liczbę potwierdzeń TX
 ```
@@ -1496,7 +1496,7 @@ A chce wysłać B 10 STK.
 
 # 36. Co jest publiczne
 
-W podstawowej wersji STK blockchain nie zapewnia prywatności transakcji.
+W podstawowej wersji BBC blockchain nie zapewnia prywatności transakcji.
 
 Publiczne są m.in.:
 
@@ -1522,7 +1522,7 @@ Adres oznacza pseudonim, a nie automatycznie prawdziwą tożsamość człowieka.
 Serwer WWW projektu może istnieć jako wygodne narzędzie:
 
 ```text
-stk.example
+bbc.example
 ├── strona projektu
 ├── seed service
 ├── explorer
@@ -1537,7 +1537,7 @@ Ale nie powinien być wymagany do:
 - wybierania zwycięskiego bloku,
 - podpisywania transakcji użytkowników.
 
-Jeśli serwer WWW przestanie działać, połączone full nody powinny nadal utrzymywać STK.
+Jeśli serwer WWW przestanie działać, połączone full nody powinny nadal utrzymywać BBC.
 
 ---
 
@@ -1545,7 +1545,7 @@ Jeśli serwer WWW przestanie działać, połączone full nody powinny nadal utrz
 
 Przed implementacją protokołu trzeba ustalić konkretne stałe:
 
-1. Nazwa waluty — roboczo `STK`.
+1. Nazwa waluty — `Bi-Bi-Coin` (`BBC`).
 2. Liczba miejsc dziesiętnych.
 3. Initial block reward.
 4. Czy reward zmniejsza się w czasie.
@@ -1585,14 +1585,14 @@ Jeśli wszystkie poprawnie zaimplementowane nody stosują identyczne reguły, si
 Pierwszym realnym milestone'em projektu powinien być program działający **bez sieci**:
 
 ```text
-./stk-demo
+./bbc-demo
 ```
 
 który potrafi:
 
 1. stworzyć portfele A i B,
 2. przydzielić A środki w genesis,
-3. utworzyć `A -> B : 10 STK`,
+3. utworzyć `A -> B : 10 BBC`,
 4. podpisać ją private key A,
 5. zweryfikować public key A,
 6. odrzucić próbę podpisania jej przez C,
@@ -1640,7 +1640,7 @@ W przypadku forka wybierają chain o największej cumulative work.
 
 # 42. Podsumowanie
 
-STK będzie małą, ale rzeczywiście rozproszoną kryptowalutą edukacyjną.
+BBC będzie małą, ale rzeczywiście rozproszoną kryptowalutą edukacyjną.
 
 Najważniejsze elementy systemu:
 
