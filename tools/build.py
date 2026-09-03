@@ -33,7 +33,7 @@ def parse_arguments() -> argparse.Namespace:
     )
     parser.add_argument(
         "action",
-        choices=("configure", "build", "run", "shell"),
+        choices=("configure", "build", "test", "run", "shell"),
         nargs="?",
         default="build",
         help="operation to perform (default: build)",
@@ -147,9 +147,26 @@ def windows_build_environment() -> dict[str, str]:
 
 
 def build_environment() -> dict[str, str]:
-    if platform.system() == "Windows":
-        return windows_build_environment()
-    return os.environ.copy()
+    environment = (
+        windows_build_environment()
+        if platform.system() == "Windows"
+        else os.environ.copy()
+    )
+
+    if "VCPKG_ROOT" not in environment:
+        vcpkg = require_tool("vcpkg", environment)
+        environment["VCPKG_ROOT"] = str(Path(vcpkg).resolve().parent)
+
+    toolchain_file = (
+        Path(environment["VCPKG_ROOT"])
+        / "scripts"
+        / "buildsystems"
+        / "vcpkg.cmake"
+    )
+    if not toolchain_file.is_file():
+        raise ToolchainError(f"vcpkg CMake toolchain not found: {toolchain_file}")
+
+    return environment
 
 
 def require_tool(name: str, environment: dict[str, str]) -> str:
@@ -186,6 +203,11 @@ def configure(cmake: str, preset: str, environment: dict[str, str]) -> None:
 def build(cmake: str, preset: str, environment: dict[str, str]) -> None:
     configure(cmake, preset, environment)
     run_command((cmake, "--build", "--preset", preset), environment)
+
+
+def test(ctest: str, cmake: str, preset: str, environment: dict[str, str]) -> None:
+    build(cmake, preset, environment)
+    run_command((ctest, "--preset", preset), environment)
 
 
 def run_program(preset: str, environment: dict[str, str]) -> None:
@@ -229,6 +251,9 @@ def main() -> int:
         configure(cmake, preset, environment)
     elif arguments.action == "build":
         build(cmake, preset, environment)
+    elif arguments.action == "test":
+        ctest = require_tool("ctest", environment)
+        test(ctest, cmake, preset, environment)
     elif arguments.action == "run":
         build(cmake, preset, environment)
         run_program(preset, environment)

@@ -61,6 +61,14 @@ compile_commands.json
 __pycache__/
 *.py[cod]
 
+# Wallets and private key material
+wallet.dat
+*.wallet
+/*.db
+
+# Locally created transaction files
+/*.bbctx
+
 # vcpkg
 vcpkg_installed/
 

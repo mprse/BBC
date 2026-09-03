@@ -11,6 +11,7 @@
             "hidden": true,
             "generator": "Ninja",
             "binaryDir": "${sourceDir}/build/${presetName}",
+            "toolchainFile": "$env{VCPKG_ROOT}/scripts/buildsystems/vcpkg.cmake",
             "cacheVariables": {
                 "CMAKE_BUILD_TYPE": "Debug"
             }
@@ -73,6 +74,32 @@
             "name": "macos-clang-debug",
             "displayName": "Build macOS Clang Debug",
             "configurePreset": "macos-clang-debug"
+        }
+    ],
+    "testPresets": [
+        {
+            "name": "windows-msvc-debug",
+            "displayName": "Test Windows MSVC Debug",
+            "configurePreset": "windows-msvc-debug",
+            "output": {
+                "outputOnFailure": true
+            }
+        },
+        {
+            "name": "linux-gcc-debug",
+            "displayName": "Test Linux GCC Debug",
+            "configurePreset": "linux-gcc-debug",
+            "output": {
+                "outputOnFailure": true
+            }
+        },
+        {
+            "name": "macos-clang-debug",
+            "displayName": "Test macOS Clang Debug",
+            "configurePreset": "macos-clang-debug",
+            "output": {
+                "outputOnFailure": true
+            }
         }
     ]
 }

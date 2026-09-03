@@ -72,8 +72,8 @@ and state logic is covered by deterministic tests.
 - Dependency manager: vcpkg in manifest mode when third-party dependencies are
   introduced.
 - Editor: Visual Studio Code with Microsoft C/C++ and CMake Tools.
-- Test integration: CTest. Catch2 is the planned unit-test framework.
-- Cryptography: libsodium is the planned provider for Ed25519 and related
+- Test integration: CTest with Catch2.
+- Cryptography: libsodium provides Ed25519 and related
   primitives. Never implement cryptographic primitives in this repository.
 
 `CMakePresets.json` is the shared source of truth for configure and build
@@ -91,6 +91,7 @@ Run commands from the repository root.
 ```console
 python tools/build.py configure
 python tools/build.py build
+python tools/build.py test
 python tools/build.py run
 python tools/build.py shell
 ```
@@ -120,8 +121,18 @@ The current structure is intentionally small:
 .
 |-- CMakeLists.txt
 |-- CMakePresets.json
+|-- vcpkg.json
+|-- docs/
+|   `-- adr/
+|-- include/bbc/
 |-- src/
+|   |-- app/
+|   |-- core/
+|   |-- crypto/
+|   |-- transaction/
+|   |-- wallet/
 |   `-- main.cpp
+|-- tests/
 |-- tools/
 |   `-- build.py
 `-- .vscode/
@@ -186,7 +197,7 @@ interfaces over a single large executable target.
 - Do not vendor dependency source trees without an explicit reason and approval.
 - Keep the dependency surface small, especially in consensus-critical code.
 - Verify library licenses are compatible with the repository license.
-- Planned initial dependencies are libsodium and Catch2; they are not authorized
+- The initial dependencies are libsodium and Catch2; they are not authorized
   substitutes for protocol design or validation tests.
 
 ## 11. Testing and verification
@@ -205,13 +216,14 @@ interfaces over a single large executable target.
 - Once tests exist, a code change is not complete until the relevant build and
   test presets pass.
 
-For the current bootstrap milestone, the minimum verification command is:
+For the current Stage 2 milestone, the minimum verification commands are:
 
 ```console
+python tools/build.py test
 python tools/build.py run
 ```
 
-It must finish successfully and run the current demo executable without errors.
+They must finish successfully and run the current application without errors.
 
 Also run `git diff --check` before handing off changes.
 

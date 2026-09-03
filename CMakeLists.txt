@@ -7,13 +7,62 @@ project(
     LANGUAGES CXX
 )
 
+include(CTest)
+find_package(unofficial-sodium CONFIG REQUIRED)
+
+function(bbc_enable_warnings target)
+    if(MSVC)
+        target_compile_options(${target} PRIVATE /W4 /permissive-)
+    else()
+        target_compile_options(${target} PRIVATE -Wall -Wextra -Wpedantic)
+    endif()
+endfunction()
+
+add_library(
+    bbc_core
+    src/app/application.cpp
+    src/app/command_options.cpp
+    src/app/password_reader.cpp
+    src/app/transaction_commands.cpp
+    src/app/wallet_access.cpp
+    src/app/wallet_selection.cpp
+    src/core/version.cpp
+    src/crypto/hash.cpp
+    src/crypto/keys.cpp
+    src/crypto/secure_memory.cpp
+    src/crypto/sodium_runtime.cpp
+    src/transaction/transaction.cpp
+    src/transaction/transaction_file.cpp
+    src/wallet/address.cpp
+    src/wallet/wallet.cpp
+    src/wallet/wallet_file.cpp
+)
+target_include_directories(bbc_core PUBLIC include PRIVATE src)
+target_compile_features(bbc_core PUBLIC cxx_std_20)
+target_compile_definitions(bbc_core PRIVATE BBC_VERSION="${PROJECT_VERSION}")
+target_link_libraries(bbc_core PRIVATE unofficial-sodium::sodium)
+set_target_properties(bbc_core PROPERTIES CXX_EXTENSIONS OFF)
+bbc_enable_warnings(bbc_core)
+
 add_executable(bbc src/main.cpp)
-
-target_compile_features(bbc PRIVATE cxx_std_20)
+target_link_libraries(bbc PRIVATE bbc_core)
 set_target_properties(bbc PROPERTIES CXX_EXTENSIONS OFF)
+bbc_enable_warnings(bbc)
 
-if(MSVC)
-    target_compile_options(bbc PRIVATE /W4 /permissive-)
-else()
-    target_compile_options(bbc PRIVATE -Wall -Wextra -Wpedantic)
+if(BUILD_TESTING)
+    find_package(Catch2 3 CONFIG REQUIRED)
+    include(Catch)
+
+    add_executable(
+        bbc_tests
+        tests/application_tests.cpp
+        tests/crypto_tests.cpp
+        tests/transaction_tests.cpp
+        tests/wallet_tests.cpp
+    )
+    target_link_libraries(bbc_tests PRIVATE bbc_core Catch2::Catch2WithMain)
+    set_target_properties(bbc_tests PROPERTIES CXX_EXTENSIONS OFF)
+    bbc_enable_warnings(bbc_tests)
+
+    catch_discover_tests(bbc_tests)
 endif()
