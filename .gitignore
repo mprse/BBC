@@ -68,6 +68,7 @@ wallet.dat
 
 # Locally created transaction files
 /*.bbctx
+/*.bbcblock
 
 # vcpkg
 vcpkg_installed/

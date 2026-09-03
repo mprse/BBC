@@ -168,6 +168,61 @@ specified in [`docs/transaction-format.md`](docs/transaction-format.md), and
 the protocol decision is recorded in
 [`docs/adr/0002-transaction-v1.md`](docs/adr/0002-transaction-v1.md).
 
+## Stage 3: blocks and Genesis
+
+Display the canonical Genesis Block:
+
+```powershell
+.\build\windows-msvc-debug\bbc.exe block genesis
+```
+
+Genesis is empty, grants no initial funds, and has this fixed block ID:
+
+```text
+10639A07612F06E14052E10B01E76E961D2BFE3458FAF7836D968C8DDC8683E2
+```
+
+Create a reward-only first block with the maximum Stage 3 target:
+
+```powershell
+.\build\windows-msvc-debug\bbc.exe block create `
+    --height 1 `
+    --previous 10639A07612F06E14052E10B01E76E961D2BFE3458FAF7836D968C8DDC8683E2 `
+    --reward-to BBC_4400000000000000000000000000000000000000000000000000000000000000 `
+    --timestamp 1788393600 `
+    --out block-1.bbcblock
+```
+
+Use a real wallet address for `--reward-to`. Add signed transaction files by
+repeating `--transaction`:
+
+```powershell
+.\build\windows-msvc-debug\bbc.exe block create `
+    --height 1 `
+    --previous <64-character-block-id> `
+    --reward-to <BBC-address> `
+    --timestamp <unix-seconds> `
+    --transaction payment-1.bbctx `
+    --transaction payment-2.bbctx `
+    --out block-1.bbcblock
+```
+
+The optional `--target` is a 64-character hexadecimal 256-bit value and defaults
+to all `FF` bytes. The optional `--nonce` defaults to zero. Stage 3 serializes
+these fields but does not yet validate Proof of Work.
+
+Inspect or perform format-level verification of a block file:
+
+```powershell
+.\build\windows-msvc-debug\bbc.exe block show --file block-1.bbcblock
+.\build\windows-msvc-debug\bbc.exe block verify --file block-1.bbcblock
+```
+
+Block v1 has a 165-byte header and between zero and 1000 canonical Transaction
+v1 values. The exact encoding and Genesis constants are specified in
+[`docs/block-format.md`](docs/block-format.md). The decision is recorded in
+[`docs/adr/0003-block-v1-and-genesis.md`](docs/adr/0003-block-v1-and-genesis.md).
+
 ## Visual Studio Code
 
 Open the repository in Visual Studio Code, then:

@@ -18,7 +18,8 @@ using CommandOptions = std::vector<CommandOption>;
 
 [[nodiscard]] std::optional<CommandOptions> parse_options(
     std::span<const std::string_view> arguments,
-    std::ostream& error_output
+    std::ostream& error_output,
+    std::initializer_list<std::string_view> repeatable = {}
 );
 
 [[nodiscard]] bool validate_options(
@@ -37,5 +38,10 @@ using CommandOptions = std::vector<CommandOption>;
     const CommandOptions& options,
     std::string_view name
 ) noexcept;
+
+[[nodiscard]] std::vector<std::string_view> option_values(
+    const CommandOptions& options,
+    std::string_view name
+);
 
 }  // namespace bbc::app::detail

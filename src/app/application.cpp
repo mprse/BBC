@@ -4,6 +4,7 @@
 #include "bbc/crypto/hash.hpp"
 #include "bbc/crypto/keys.hpp"
 #include "bbc/wallet/wallet.hpp"
+#include "app/block_commands.hpp"
 #include "app/command_options.hpp"
 #include "app/transaction_commands.hpp"
 #include "app/wallet_access.hpp"
@@ -82,10 +83,13 @@ void print_help(std::ostream& output) {
            << "  version      Show the application version\n"
            << "  wallet       Create, inspect, sign, or verify with a wallet\n"
            << "  transaction  Create, inspect, or verify a signed transaction\n"
+           << "  block        Create, inspect, or verify a block\n"
            << "  wallet-demo  Generate a temporary wallet and verify a signature\n\n";
     print_wallet_help(output);
     output << '\n';
     detail::print_transaction_help(output);
+    output << '\n';
+    detail::print_block_help(output);
 }
 
 bool read_password(
@@ -469,6 +473,14 @@ int run(
             error_output,
             password_reader,
             effective_settings_directory
+        );
+    }
+
+    if (arguments.front() == "block") {
+        return detail::run_block_command(
+            arguments.subspan(1),
+            output,
+            error_output
         );
     }
 

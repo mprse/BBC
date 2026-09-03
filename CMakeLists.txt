@@ -21,11 +21,14 @@ endfunction()
 add_library(
     bbc_core
     src/app/application.cpp
+    src/app/block_commands.cpp
     src/app/command_options.cpp
     src/app/password_reader.cpp
     src/app/transaction_commands.cpp
     src/app/wallet_access.cpp
     src/app/wallet_selection.cpp
+    src/chain/block.cpp
+    src/chain/block_file.cpp
     src/core/version.cpp
     src/crypto/hash.cpp
     src/crypto/keys.cpp
@@ -56,6 +59,7 @@ if(BUILD_TESTING)
     add_executable(
         bbc_tests
         tests/application_tests.cpp
+        tests/block_tests.cpp
         tests/crypto_tests.cpp
         tests/transaction_tests.cpp
         tests/wallet_tests.cpp

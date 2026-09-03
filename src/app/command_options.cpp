@@ -7,7 +7,8 @@ namespace bbc::app::detail {
 
 std::optional<CommandOptions> parse_options(
     const std::span<const std::string_view> arguments,
-    std::ostream& error_output
+    std::ostream& error_output,
+    const std::initializer_list<std::string_view> repeatable
 ) {
     CommandOptions options;
     options.reserve(arguments.size() / 2 + 1);
@@ -17,7 +18,9 @@ std::optional<CommandOptions> parse_options(
             error_output << "Expected an option but found: " << name << '\n';
             return std::nullopt;
         }
-        if (std::ranges::any_of(options, [name](const CommandOption& option) {
+        const bool may_repeat = std::ranges::find(repeatable, name) != repeatable.end();
+        if (!may_repeat &&
+            std::ranges::any_of(options, [name](const CommandOption& option) {
                 return option.name == name;
             })) {
             error_output << "Duplicate option: " << name << '\n';
@@ -76,6 +79,19 @@ bool has_option(
     return std::ranges::any_of(options, [name](const CommandOption& option) {
         return option.name == name;
     });
+}
+
+std::vector<std::string_view> option_values(
+    const CommandOptions& options,
+    const std::string_view name
+) {
+    std::vector<std::string_view> values;
+    for (const CommandOption& option : options) {
+        if (option.name == name && option.value.has_value()) {
+            values.push_back(*option.value);
+        }
+    }
+    return values;
 }
 
 }  // namespace bbc::app::detail

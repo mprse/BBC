@@ -1,5 +1,6 @@
 #pragma once
 
+#include "bbc/core/protocol.hpp"
 #include "bbc/crypto/types.hpp"
 #include "bbc/wallet/address.hpp"
 
@@ -15,7 +16,7 @@ class Wallet;
 
 namespace bbc::transaction {
 
-inline constexpr std::uint32_t current_chain_id = 1;
+inline constexpr std::uint32_t current_chain_id = core::chain_id;
 inline constexpr std::size_t unsigned_transaction_size = 97;
 inline constexpr std::size_t signed_transaction_size = 161;
 

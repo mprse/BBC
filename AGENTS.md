@@ -127,6 +127,7 @@ The current structure is intentionally small:
 |-- include/bbc/
 |-- src/
 |   |-- app/
+|   |-- chain/
 |   |-- core/
 |   |-- crypto/
 |   |-- transaction/
@@ -216,7 +217,7 @@ interfaces over a single large executable target.
 - Once tests exist, a code change is not complete until the relevant build and
   test presets pass.
 
-For the current Stage 2 milestone, the minimum verification commands are:
+For the current Stage 3 milestone, the minimum verification commands are:
 
 ```console
 python tools/build.py test
