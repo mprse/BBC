@@ -254,11 +254,47 @@ The initial network target is fixed at:
 000000FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF
 ```
 
-Genesis is exempt from mining. Chain linkage, balances, rewards, account nonces,
-and timestamp rules remain for Stage 5. The exact rules and deterministic vector
-are specified in [`docs/proof-of-work.md`](docs/proof-of-work.md), and the
-decision is recorded in
+Genesis is exempt from mining. The exact Proof of Work rules and deterministic
+vector are specified in [`docs/proof-of-work.md`](docs/proof-of-work.md), and
+the decision is recorded in
 [`docs/adr/0004-fixed-proof-of-work.md`](docs/adr/0004-fixed-proof-of-work.md).
+
+## Stage 5: Linear chain and account state
+
+Replay mined block files in height order and verify the resulting chain:
+
+```powershell
+.\build\windows-msvc-debug\bbc.exe chain verify `
+    --block block-1.bbcblock `
+    --block block-2.bbcblock
+```
+
+Inspect its tip or an account balance using the same ordered block history:
+
+```powershell
+.\build\windows-msvc-debug\bbc.exe chain tip `
+    --block block-1.bbcblock
+
+.\build\windows-msvc-debug\bbc.exe chain balance `
+    --address BBC_4400000000000000000000000000000000000000000000000000000000000000 `
+    --block block-1.bbcblock
+```
+
+If a wallet is selected, its address can be queried directly:
+
+```powershell
+.\build\windows-msvc-debug\bbc.exe wallet balance `
+    --block block-1.bbcblock
+```
+
+Genesis is built into the executable and must not be passed as a file. Stage 5
+uses `100,000,000` base units per BBC, a constant `50 BBC` block subsidy, account
+nonces starting at zero, and a zero minimum fee. Fees are transferred to the
+block reward recipient. Chain and account-state validation is atomic.
+
+The exact replay and state-transition rules are specified in
+[`docs/chain-state.md`](docs/chain-state.md), and the decision is recorded in
+[`docs/adr/0005-linear-chain-and-account-state.md`](docs/adr/0005-linear-chain-and-account-state.md).
 
 ## Visual Studio Code
 

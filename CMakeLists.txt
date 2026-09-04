@@ -22,6 +22,7 @@ add_library(
     bbc_core
     src/app/application.cpp
     src/app/block_commands.cpp
+    src/app/chain_commands.cpp
     src/app/command_options.cpp
     src/app/password_reader.cpp
     src/app/transaction_commands.cpp
@@ -29,6 +30,8 @@ add_library(
     src/app/wallet_selection.cpp
     src/chain/block.cpp
     src/chain/block_file.cpp
+    src/chain/blockchain.cpp
+    src/chain/state.cpp
     src/consensus/proof_of_work.cpp
     src/core/version.cpp
     src/crypto/hash.cpp
@@ -61,6 +64,7 @@ if(BUILD_TESTING)
         bbc_tests
         tests/application_tests.cpp
         tests/block_tests.cpp
+        tests/blockchain_tests.cpp
         tests/proof_of_work_tests.cpp
         tests/crypto_tests.cpp
         tests/transaction_tests.cpp

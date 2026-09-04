@@ -67,7 +67,7 @@ Its block ID is:
 Nonce `7707262` does not meet the target. Starting at nonce zero, the known
 solution requires 7,707,264 attempts when every nonce is tested sequentially.
 
-## Stage 4 verification boundary
+## Proof of Work verification boundary
 
 Stage 4 block verification checks:
 
@@ -76,7 +76,7 @@ Stage 4 block verification checks:
 - the exact fixed target,
 - and the Proof of Work hash comparison.
 
-It does not yet prove that the parent is known or canonical, the height follows
-the parent, the timestamp is acceptable, transactions have sufficient balances
-and correct state nonces, or rewards are applied correctly. Those are chain and
-state rules for Stage 5.
+Proof of Work verification alone does not prove that the parent is known or
+canonical, the height follows the parent, the timestamp is acceptable,
+transactions have sufficient balances and correct state nonces, or rewards are
+applied correctly. Those checks belong to the Stage 5 chain and state layer.

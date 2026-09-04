@@ -5,6 +5,7 @@
 #include "bbc/crypto/keys.hpp"
 #include "bbc/wallet/wallet.hpp"
 #include "app/block_commands.hpp"
+#include "app/chain_commands.hpp"
 #include "app/command_options.hpp"
 #include "app/transaction_commands.hpp"
 #include "app/wallet_access.hpp"
@@ -69,6 +70,7 @@ void print_wallet_help(std::ostream& output) {
            << "  bbc wallet select --file <path>\n"
            << "  bbc wallet selected\n"
            << "  bbc wallet address [--file <path>]\n"
+           << "  bbc wallet balance [--file <path>] [--block <path>]...\n"
            << "  bbc wallet sign [--file <path>] --message <text>\n"
            << "  bbc wallet verify --public-key <hex> --message <text> "
               "--signature <hex>\n";
@@ -84,12 +86,15 @@ void print_help(std::ostream& output) {
            << "  wallet       Create, inspect, sign, or verify with a wallet\n"
            << "  transaction  Create, inspect, or verify a signed transaction\n"
            << "  block        Create, mine, inspect, or verify a block\n"
+           << "  chain        Verify blocks and inspect chain state\n"
            << "  wallet-demo  Generate a temporary wallet and verify a signature\n\n";
     print_wallet_help(output);
     output << '\n';
     detail::print_transaction_help(output);
     output << '\n';
     detail::print_block_help(output);
+    output << '\n';
+    detail::print_chain_help(output);
 }
 
 bool read_password(
@@ -269,6 +274,37 @@ int show_wallet_address(
     return success;
 }
 
+int show_wallet_balance(
+    const Options& options,
+    const PasswordReader& password_reader,
+    const std::filesystem::path& settings_directory,
+    std::ostream& output,
+    std::ostream& error_output
+) {
+    if (!validate_options(options, {"--file", "--block"}, error_output)) {
+        return usage_error;
+    }
+    const std::optional<std::filesystem::path> file =
+        detail::resolve_wallet_path(options, settings_directory, "--file", error_output);
+    if (!file.has_value()) {
+        return runtime_error;
+    }
+    std::optional<wallet::Wallet> loaded_wallet = detail::open_wallet(
+        *file,
+        password_reader,
+        error_output
+    );
+    if (!loaded_wallet.has_value()) {
+        return runtime_error;
+    }
+    return detail::show_chain_balance(
+        loaded_wallet->address(),
+        detail::option_values(options, "--block"),
+        output,
+        error_output
+    );
+}
+
 int sign_message(
     const Options& options,
     const PasswordReader& password_reader,
@@ -363,7 +399,9 @@ int run_wallet_command(
     }
 
     const std::string_view command = arguments.front();
-    const std::optional<Options> options = parse_options(arguments.subspan(1), error_output);
+    const std::optional<Options> options = command == "balance"
+        ? parse_options(arguments.subspan(1), error_output, {"--block"})
+        : parse_options(arguments.subspan(1), error_output);
     if (!options.has_value()) {
         return usage_error;
     }
@@ -391,6 +429,15 @@ int run_wallet_command(
     }
     if (command == "address") {
         return show_wallet_address(
+            *options,
+            password_reader,
+            settings_directory,
+            output,
+            error_output
+        );
+    }
+    if (command == "balance") {
+        return show_wallet_balance(
             *options,
             password_reader,
             settings_directory,
@@ -478,6 +525,14 @@ int run(
 
     if (arguments.front() == "block") {
         return detail::run_block_command(
+            arguments.subspan(1),
+            output,
+            error_output
+        );
+    }
+
+    if (arguments.front() == "chain") {
+        return detail::run_chain_command(
             arguments.subspan(1),
             output,
             error_output
