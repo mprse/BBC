@@ -8,6 +8,8 @@ project(
 )
 
 include(CTest)
+find_package(asio CONFIG REQUIRED)
+find_package(nlohmann_json CONFIG REQUIRED)
 find_package(unofficial-sodium CONFIG REQUIRED)
 find_package(unofficial-sqlite3 CONFIG REQUIRED)
 
@@ -26,6 +28,7 @@ add_library(
     src/app/chain_commands.cpp
     src/app/command_options.cpp
     src/app/mempool_commands.cpp
+    src/app/node_commands.cpp
     src/app/password_reader.cpp
     src/app/transaction_commands.cpp
     src/app/wallet_access.cpp
@@ -41,6 +44,8 @@ add_library(
     src/crypto/secure_memory.cpp
     src/crypto/sodium_runtime.cpp
     src/mempool/mempool.cpp
+    src/node/control_server.cpp
+    src/node/node_config.cpp
     src/storage/chain_store.cpp
     src/storage/mempool_store.cpp
     src/transaction/transaction.cpp
@@ -52,8 +57,13 @@ add_library(
 target_include_directories(bbc_core PUBLIC include PRIVATE src)
 target_compile_features(bbc_core PUBLIC cxx_std_20)
 target_compile_definitions(bbc_core PRIVATE BBC_VERSION="${PROJECT_VERSION}")
+if(WIN32)
+    target_compile_definitions(bbc_core PRIVATE _WIN32_WINNT=0x0A00)
+endif()
 target_link_libraries(bbc_core PRIVATE unofficial-sodium::sodium)
 target_link_libraries(bbc_core PRIVATE unofficial::sqlite3::sqlite3)
+target_link_libraries(bbc_core PRIVATE asio::asio)
+target_link_libraries(bbc_core PRIVATE nlohmann_json::nlohmann_json)
 set_target_properties(bbc_core PROPERTIES CXX_EXTENSIONS OFF)
 bbc_enable_warnings(bbc_core)
 
@@ -64,6 +74,7 @@ bbc_enable_warnings(bbc)
 
 if(BUILD_TESTING)
     find_package(Catch2 3 CONFIG REQUIRED)
+    find_package(Python3 3.9 REQUIRED COMPONENTS Interpreter)
     include(Catch)
 
     add_executable(
@@ -75,6 +86,7 @@ if(BUILD_TESTING)
         tests/storage_tests.cpp
         tests/crypto_tests.cpp
         tests/mempool_tests.cpp
+        tests/node_tests.cpp
         tests/transaction_tests.cpp
         tests/wallet_tests.cpp
     )
@@ -83,4 +95,15 @@ if(BUILD_TESTING)
     bbc_enable_warnings(bbc_tests)
 
     catch_discover_tests(bbc_tests)
+
+    add_test(
+        NAME BBC.local-network-scenario-smoke
+        COMMAND
+            "${Python3_EXECUTABLE}"
+            "${CMAKE_SOURCE_DIR}/tools/scenario.py"
+            "${CMAKE_SOURCE_DIR}/scenarios/two-actor-smoke.json"
+            --executable "$<TARGET_FILE:bbc>"
+            --no-ui
+    )
+    set_tests_properties(BBC.local-network-scenario-smoke PROPERTIES TIMEOUT 30)
 endif()

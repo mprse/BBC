@@ -1,0 +1,36 @@
+{
+  "schema_version": 1,
+  "name": "two-actor-smoke",
+  "network": {
+    "profile": "development",
+    "step_timeout_ms": 10000
+  },
+  "actors": [
+    {
+      "name": "node-a",
+      "roles": ["wallet", "full_node"],
+      "control": "127.0.0.1:0"
+    },
+    {
+      "name": "node-b",
+      "roles": ["wallet", "full_node"],
+      "control": "127.0.0.1:0"
+    }
+  ],
+  "steps": [
+    {"command": "start_all"},
+    {"wait": "all_ready"},
+    {"command": "dump", "actors": "all"}
+  ],
+  "assertions": [
+    {"all_ready": true},
+    {"same_tip": ["node-a", "node-b"]},
+    {"mempool_size": 0},
+    {
+      "height": {
+        "actors": ["node-a", "node-b"],
+        "value": 0
+      }
+    }
+  ]
+}

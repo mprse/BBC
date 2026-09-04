@@ -12,7 +12,8 @@ Bi-Bi-Coin is an educational C++ project for learning how a blockchain works.
 - Python 3.9 or newer
 - vcpkg available on `PATH`
 
-The build uses the pinned vcpkg manifest to install libsodium, SQLite, and Catch2. If
+The build uses the pinned vcpkg manifest to install Asio, nlohmann/json,
+libsodium, SQLite, and Catch2. If
 `VCPKG_ROOT` is not already set, the build helper derives it from the `vcpkg`
 executable found on `PATH`.
 
@@ -358,6 +359,26 @@ The proposed multi-process TCP test harness, actor roles, scenario format,
 control channel, dashboard, synchronization rules, and staged P2P rollout are
 described in
 [`docs/local-network-test-plan.md`](docs/local-network-test-plan.md).
+
+## Stage 7.0: Local scenario foundation
+
+Run the first two-process scenario:
+
+```powershell
+python tools/scenario.py scenarios/two-actor-smoke.json
+```
+
+The runner starts two long-lived `bbc` processes with isolated storage, waits
+for both to initialize canonical Genesis, collects normalized state dumps,
+checks that their tips and heights agree, and shuts them down. It uses a panel
+display in an interactive terminal and prefixed lines with `--no-ui`.
+
+This stage contains no P2P traffic yet. Its loopback JSON control channel is
+separate from the binary P2P protocol planned for Stage 7.1. The exact actor
+configuration, control methods, output, and artifacts are documented in
+[`docs/node-control.md`](docs/node-control.md). The dependency and architecture
+decision is recorded in
+[`docs/adr/0008-stage-7-networking-foundation.md`](docs/adr/0008-stage-7-networking-foundation.md).
 
 ## Visual Studio Code
 

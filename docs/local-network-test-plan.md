@@ -106,7 +106,7 @@ time, malformed messages, duplicate object IDs, and relay loops.
 Every actor exposes an opt-in control endpoint bound only to `127.0.0.1`. It is
 enabled only by an explicit scenario/test option and uses newline-delimited JSON
 requests, responses, and events. Each request has a correlation ID. The runner
-generates an unpredictable per-run token and passes it to actors without placing
+generates an unpredictable token for each actor and passes it without placing
 wallet passwords or private keys in command-line arguments or logs.
 
 The control plane may request normal public operations such as:
@@ -382,7 +382,7 @@ or final dumps.
 
 ## 11. Proposed implementation increments
 
-### Stage 7.0: Scenario foundation
+### Stage 7.0: Scenario foundation (implemented)
 
 - JSON schema and validation;
 - process supervisor and per-run directories;

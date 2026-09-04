@@ -200,7 +200,8 @@ interfaces over a single large executable target.
 - Do not vendor dependency source trees without an explicit reason and approval.
 - Keep the dependency surface small, especially in consensus-critical code.
 - Verify library licenses are compatible with the repository license.
-- The initial dependencies are libsodium, SQLite, and Catch2; they are not
+- The current dependencies are Asio, nlohmann/json, libsodium, SQLite, and
+  Catch2; they are not
   authorized substitutes for protocol design or validation tests.
 
 ## 11. Testing and verification
@@ -219,7 +220,7 @@ interfaces over a single large executable target.
 - Once tests exist, a code change is not complete until the relevant build and
   test presets pass.
 
-For the current Stage 6 milestone, the minimum verification commands are:
+For the current Stage 7.0 milestone, the minimum verification commands are:
 
 ```console
 python tools/build.py test

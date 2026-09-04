@@ -4,8 +4,10 @@
   "version-semver": "0.1.0",
   "description": "An educational blockchain project",
   "dependencies": [
+    "asio",
     "catch2",
     "libsodium",
+    "nlohmann-json",
     "sqlite3"
   ],
   "builtin-baseline": "7ff71c68261ecf3b60cdb8772f2e6759ee0a71b1"
