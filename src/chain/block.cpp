@@ -23,8 +23,6 @@ constexpr std::size_t previous_hash_offset = 17;
 constexpr std::size_t transaction_root_offset = 49;
 constexpr std::size_t reward_recipient_offset = 81;
 constexpr std::size_t timestamp_offset = 113;
-constexpr std::size_t difficulty_target_offset = 121;
-constexpr std::size_t mining_nonce_offset = 153;
 constexpr std::size_t transaction_count_offset = 161;
 
 template <typename Range>
@@ -224,6 +222,23 @@ crypto::Hash256 Block::id() const {
     return crypto::sha256(serialize_header());
 }
 
+Block Block::with_mining_nonce(const std::uint64_t mining_nonce) const {
+    if (is_genesis()) {
+        return *this;
+    }
+    return Block{
+        chain_id_,
+        height_,
+        previous_block_hash_,
+        transaction_root_,
+        reward_recipient_,
+        timestamp_,
+        difficulty_target_,
+        mining_nonce,
+        transactions_,
+    };
+}
+
 BlockResult::BlockResult(Block block) : value_(std::move(block)) {}
 
 BlockResult::BlockResult(const BlockError error) : value_(error) {}
@@ -347,8 +362,9 @@ BlockResult deserialize_block(const crypto::ByteView encoded) {
         read_array<crypto::hash256_size>(encoded, reward_recipient_offset);
     const std::uint64_t timestamp = read_u64_le(encoded, timestamp_offset);
     crypto::Hash256 target =
-        read_array<crypto::hash256_size>(encoded, difficulty_target_offset);
-    const std::uint64_t mining_nonce = read_u64_le(encoded, mining_nonce_offset);
+        read_array<crypto::hash256_size>(encoded, block_difficulty_target_offset);
+    const std::uint64_t mining_nonce =
+        read_u64_le(encoded, block_mining_nonce_offset);
 
     std::vector<transaction::SignedTransaction> transactions;
     transactions.reserve(transaction_count);

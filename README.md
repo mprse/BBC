@@ -182,7 +182,7 @@ Genesis is empty, grants no initial funds, and has this fixed block ID:
 10639A07612F06E14052E10B01E76E961D2BFE3458FAF7836D968C8DDC8683E2
 ```
 
-Create a reward-only first block with the maximum Stage 3 target:
+Create an unmined reward-only first-block candidate:
 
 ```powershell
 .\build\windows-msvc-debug\bbc.exe block create `
@@ -190,7 +190,7 @@ Create a reward-only first block with the maximum Stage 3 target:
     --previous 10639A07612F06E14052E10B01E76E961D2BFE3458FAF7836D968C8DDC8683E2 `
     --reward-to BBC_4400000000000000000000000000000000000000000000000000000000000000 `
     --timestamp 1788393600 `
-    --out block-1.bbcblock
+    --out candidate-1.bbcblock
 ```
 
 Use a real wallet address for `--reward-to`. Add signed transaction files by
@@ -204,24 +204,61 @@ repeating `--transaction`:
     --timestamp <unix-seconds> `
     --transaction payment-1.bbctx `
     --transaction payment-2.bbctx `
-    --out block-1.bbcblock
+    --out candidate-1.bbcblock
 ```
 
 The optional `--target` is a 64-character hexadecimal 256-bit value and defaults
-to all `FF` bytes. The optional `--nonce` defaults to zero. Stage 3 serializes
-these fields but does not yet validate Proof of Work.
+to the fixed Stage 4 network target. The optional `--nonce` defaults to zero.
+Custom targets remain useful for malformed-input tests, but they fail network
+Proof of Work verification.
 
-Inspect or perform format-level verification of a block file:
+Inspect a canonical block file:
 
 ```powershell
-.\build\windows-msvc-debug\bbc.exe block show --file block-1.bbcblock
-.\build\windows-msvc-debug\bbc.exe block verify --file block-1.bbcblock
+.\build\windows-msvc-debug\bbc.exe block show --file candidate-1.bbcblock
 ```
 
 Block v1 has a 165-byte header and between zero and 1000 canonical Transaction
 v1 values. The exact encoding and Genesis constants are specified in
 [`docs/block-format.md`](docs/block-format.md). The decision is recorded in
 [`docs/adr/0003-block-v1-and-genesis.md`](docs/adr/0003-block-v1-and-genesis.md).
+
+## Stage 4: Proof of Work
+
+Mine an existing candidate by searching its mining nonce:
+
+```powershell
+.\build\windows-msvc-debug\bbc.exe block mine `
+    --file candidate-1.bbcblock `
+    --out block-1.bbcblock
+```
+
+Mining keeps the candidate content fixed, begins at its encoded nonce, and
+increments that nonce until the block hash is below the target. The command
+prints the winning nonce, number of attempts, elapsed time, and hash rate. It
+never overwrites an existing output file.
+
+Use `--max-attempts <value>` to stop after a bounded amount of work. A stopped
+run prints the next untested nonce, which can be placed in a new candidate with
+`block create --nonce <value>` before resuming.
+
+Verify the canonical format and Proof of Work:
+
+```powershell
+.\build\windows-msvc-debug\bbc.exe block verify --file block-1.bbcblock
+```
+
+The initial network target is fixed at:
+
+```text
+000000FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF
+```
+
+Genesis is exempt from mining. Chain linkage, balances, rewards, account nonces,
+and timestamp rules remain for Stage 5. The exact rules and deterministic vector
+are specified in [`docs/proof-of-work.md`](docs/proof-of-work.md), and the
+decision is recorded in
+[`docs/adr/0004-fixed-proof-of-work.md`](docs/adr/0004-fixed-proof-of-work.md).
 
 ## Visual Studio Code
 

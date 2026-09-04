@@ -16,6 +16,8 @@
 namespace bbc::chain {
 
 inline constexpr std::size_t block_header_size = 165;
+inline constexpr std::size_t block_difficulty_target_offset = 121;
+inline constexpr std::size_t block_mining_nonce_offset = 153;
 inline constexpr std::size_t maximum_transactions_per_block = 1000;
 inline constexpr std::size_t maximum_block_size =
     block_header_size +
@@ -68,6 +70,7 @@ public:
     [[nodiscard]] crypto::Bytes serialize_header() const;
     [[nodiscard]] crypto::Bytes serialize() const;
     [[nodiscard]] crypto::Hash256 id() const;
+    [[nodiscard]] Block with_mining_nonce(std::uint64_t mining_nonce) const;
 
 private:
     friend BlockResult create_block(BlockFields fields);

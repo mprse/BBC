@@ -2,13 +2,17 @@
 
 #include "app/command_options.hpp"
 #include "bbc/chain/block.hpp"
+#include "bbc/consensus/proof_of_work.hpp"
 #include "bbc/crypto/hash.hpp"
 #include "bbc/transaction/transaction.hpp"
 #include "bbc/wallet/address.hpp"
 
 #include <charconv>
+#include <chrono>
 #include <cstdint>
 #include <filesystem>
+#include <iomanip>
+#include <limits>
 #include <optional>
 #include <ostream>
 #include <string>
@@ -69,12 +73,6 @@ std::optional<std::uint64_t> optional_uint64_option(
         return default_value;
     }
     return parse_uint64(values.front(), name, error_output);
-}
-
-bbc::crypto::Hash256 maximum_target() {
-    crypto::Hash256 target{};
-    target.fill(0xFFU);
-    return target;
 }
 
 void print_block(const chain::Block& block, std::ostream& output) {
@@ -156,7 +154,7 @@ int create_block_file(
         return usage_error;
     }
 
-    crypto::Hash256 target = maximum_target();
+    crypto::Hash256 target = consensus::fixed_difficulty_target();
     const std::vector<std::string_view> encoded_targets = option_values(options, "--target");
     if (!encoded_targets.empty() && !crypto::decode_hex(encoded_targets.front(), target)) {
         error_output << "Difficulty target must contain exactly 64 hexadecimal "
@@ -274,13 +272,102 @@ int verify_block_file(
     chain::BlockResult loaded =
         chain::load_block(std::filesystem::path{std::string{*file}});
     if (!loaded.has_value()) {
-        error_output << "Block format verification: failed: "
+        error_output << "Block verification: failed: "
                      << chain::block_error_message(loaded.error()) << '\n';
         return runtime_error;
     }
-    output << "Block format verification: success\n"
+    const consensus::ProofOfWorkError proof_error =
+        consensus::validate_proof_of_work(loaded.value());
+    if (proof_error != consensus::ProofOfWorkError::none) {
+        error_output << "Block verification: failed: "
+                     << consensus::proof_of_work_error_message(proof_error) << '\n';
+        return runtime_error;
+    }
+
+    output << "Block verification: success\n"
            << "Block ID: " << crypto::to_upper_hex(loaded.value().id()) << '\n'
-           << "Proof of Work and chain state are not checked in Stage 3.\n";
+           << "Format and Proof of Work are valid. Chain state is not checked in "
+              "Stage 4.\n";
+    return success;
+}
+
+int mine_block_file(
+    const CommandOptions& options,
+    std::ostream& output,
+    std::ostream& error_output
+) {
+    if (!validate_options(options, {"--file", "--out", "--max-attempts"}, error_output)) {
+        return usage_error;
+    }
+    const std::optional<std::string_view> file =
+        required_option(options, "--file", error_output);
+    const std::optional<std::string_view> output_file =
+        required_option(options, "--out", error_output);
+    const std::optional<std::uint64_t> maximum_attempts = optional_uint64_option(
+        options,
+        "--max-attempts",
+        std::numeric_limits<std::uint64_t>::max(),
+        error_output
+    );
+    if (!file.has_value() || !output_file.has_value() ||
+        !maximum_attempts.has_value()) {
+        return usage_error;
+    }
+
+    const std::filesystem::path mined_path{std::string{*output_file}};
+    std::error_code destination_error;
+    if (std::filesystem::exists(mined_path, destination_error)) {
+        error_output << "Could not save mined block: "
+                     << chain::block_error_message(chain::BlockError::file_already_exists)
+                     << '\n';
+        return runtime_error;
+    }
+    if (destination_error) {
+        error_output << "Could not save mined block: "
+                     << chain::block_error_message(chain::BlockError::io_error) << '\n';
+        return runtime_error;
+    }
+
+    chain::BlockResult loaded =
+        chain::load_block(std::filesystem::path{std::string{*file}});
+    if (!loaded.has_value()) {
+        error_output << "Could not read mining candidate: "
+                     << chain::block_error_message(loaded.error()) << '\n';
+        return runtime_error;
+    }
+
+    const auto started = std::chrono::steady_clock::now();
+    consensus::MiningResult mined =
+        consensus::mine_block(loaded.value(), *maximum_attempts);
+    const std::chrono::duration<double> elapsed =
+        std::chrono::steady_clock::now() - started;
+    if (!mined.has_value()) {
+        error_output << "Mining stopped: "
+                     << consensus::proof_of_work_error_message(mined.error()) << '\n'
+                     << "Attempts: " << mined.attempts() << '\n';
+        if (mined.next_nonce().has_value()) {
+            error_output << "Next nonce: " << *mined.next_nonce() << '\n';
+        }
+        return runtime_error;
+    }
+
+    const chain::BlockError save_error = chain::save_block(mined.value(), mined_path);
+    if (save_error != chain::BlockError::none) {
+        error_output << "Could not save mined block: "
+                     << chain::block_error_message(save_error) << '\n';
+        return runtime_error;
+    }
+
+    const double hashes_per_second = elapsed.count() > 0.0
+        ? static_cast<double>(mined.attempts()) / elapsed.count()
+        : 0.0;
+    output << "Mined block saved: " << mined_path.string() << '\n';
+    print_block(mined.value(), output);
+    output << "Attempts: " << mined.attempts() << '\n'
+           << std::fixed << std::setprecision(3)
+           << "Elapsed seconds: " << elapsed.count() << '\n'
+           << std::setprecision(0)
+           << "Hash rate (hashes/s): " << hashes_per_second << '\n';
     return success;
 }
 
@@ -293,7 +380,9 @@ void print_block_help(std::ostream& output) {
               "--reward-to <address> --timestamp <unix-seconds> [--target <hex>] "
               "[--nonce <value>] [--transaction <path>]... --out <path>\n"
            << "  bbc block show --file <path>\n"
-           << "  bbc block verify --file <path>\n";
+           << "  bbc block verify --file <path>\n"
+           << "  bbc block mine --file <candidate> --out <path> "
+              "[--max-attempts <value>]\n";
 }
 
 int run_block_command(
@@ -327,6 +416,9 @@ int run_block_command(
     }
     if (command == "verify") {
         return verify_block_file(*options, output, error_output);
+    }
+    if (command == "mine") {
+        return mine_block_file(*options, output, error_output);
     }
 
     error_output << "Unknown block command: " << command << "\n\n";

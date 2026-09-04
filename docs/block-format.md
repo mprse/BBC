@@ -22,7 +22,7 @@ Every block begins with this exact 165-byte header:
 | 49 | 32 | transaction root | Merkle root defined below |
 | 81 | 32 | reward recipient | Raw BBC address hash; all zero only for Genesis |
 | 113 | 8 | timestamp | Unix time in seconds |
-| 121 | 32 | difficulty target | Big-endian 256-bit target |
+| 121 | 32 | difficulty target | Big-endian 256-bit target; fixed by Stage 4 consensus |
 | 153 | 8 | mining nonce | Proof of Work search value, distinct from account nonce |
 | 161 | 4 | transaction count | Number of following transactions, from `0` to `1000` |
 
@@ -109,7 +109,7 @@ Its canonical block ID is:
 Genesis is not mined, grants no reward, and contains no transactions. Any
 height-zero encoding that differs from this constant is invalid.
 
-## Stage 3 validation order
+## Format validation order
 
 An untrusted encoded block is validated in this order:
 
@@ -122,7 +122,8 @@ An untrusted encoded block is validated in this order:
 6. For height zero, require the exact canonical Genesis encoding.
 7. For other heights, require a nonzero previous hash and reward-recipient hash.
 
-Passing these checks means only that the block is a valid Stage 3 protocol
-object. Stage 4 will validate Proof of Work. Later stages will validate the
-parent relationship, height and timestamp relative to the parent, account state,
+Passing these checks means only that the block has a valid canonical format.
+Stage 4 additionally requires the expected target and valid Proof of Work, as
+specified in `docs/proof-of-work.md`. Later stages will validate the parent
+relationship, height and timestamp relative to the parent, account state,
 transaction nonces and balances, fees, and reward state transitions.

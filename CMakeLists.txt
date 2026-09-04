@@ -29,6 +29,7 @@ add_library(
     src/app/wallet_selection.cpp
     src/chain/block.cpp
     src/chain/block_file.cpp
+    src/consensus/proof_of_work.cpp
     src/core/version.cpp
     src/crypto/hash.cpp
     src/crypto/keys.cpp
@@ -60,6 +61,7 @@ if(BUILD_TESTING)
         bbc_tests
         tests/application_tests.cpp
         tests/block_tests.cpp
+        tests/proof_of_work_tests.cpp
         tests/crypto_tests.cpp
         tests/transaction_tests.cpp
         tests/wallet_tests.cpp

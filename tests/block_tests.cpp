@@ -146,6 +146,7 @@ TEST_CASE("genesis block is a deterministic protocol constant", "[block]") {
     CHECK(encoded[1] == 'B');
     CHECK(encoded[2] == 'L');
     CHECK(encoded[3] == 'K');
+    CHECK(genesis.with_mining_nonce(1).id() == genesis.id());
     CHECK(
         bbc::crypto::to_upper_hex(genesis.id()) ==
         "10639A07612F06E14052E10B01E76E961D2BFE3458FAF7836D968C8DDC8683E2"
@@ -381,7 +382,7 @@ TEST_CASE("block commands create show and verify binary files", "[application][b
         "10639A07612F06E14052E10B01E76E961D2BFE3458FAF7836D968C8DDC8683E2";
     constexpr std::string_view reward_address =
         "BBC_4400000000000000000000000000000000000000000000000000000000000000";
-    const std::array<std::string_view, 12> create_arguments{
+    const std::array<std::string_view, 14> create_arguments{
         "block",
         "create",
         "--height",
@@ -392,6 +393,8 @@ TEST_CASE("block commands create show and verify binary files", "[application][b
         reward_address,
         "--timestamp",
         "1788393600",
+        "--nonce",
+        "7707263",
         "--out",
         block_path,
     };
@@ -412,10 +415,34 @@ TEST_CASE("block commands create show and verify binary files", "[application][b
     std::ostringstream verify_output;
     CHECK(bbc::app::run(verify_arguments, verify_output, error_output) == 0);
     CHECK(
-        verify_output.str().find("Block format verification: success") !=
+        verify_output.str().find("Block verification: success") !=
         std::string::npos
     );
+
+    const std::string mined_path = directory.file("mined.bbcblock").string();
+    const std::array<std::string_view, 8> mine_arguments{
+        "block",
+        "mine",
+        "--file",
+        block_path,
+        "--out",
+        mined_path,
+        "--max-attempts",
+        "1",
+    };
+    std::ostringstream mine_output;
+    REQUIRE(bbc::app::run(mine_arguments, mine_output, error_output) == 0);
+    CHECK(mine_output.str().find("Attempts: 1") != std::string::npos);
+    CHECK(std::filesystem::is_regular_file(mined_path));
     CHECK(error_output.str().empty());
+
+    std::ostringstream duplicate_output;
+    std::ostringstream duplicate_error;
+    CHECK(
+        bbc::app::run(mine_arguments, duplicate_output, duplicate_error) == 1
+    );
+    CHECK(duplicate_output.str().empty());
+    CHECK(duplicate_error.str().find("block file already exists") != std::string::npos);
 }
 
 TEST_CASE("block create accepts repeated transaction files", "[application][block]") {

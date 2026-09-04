@@ -83,7 +83,7 @@ void print_help(std::ostream& output) {
            << "  version      Show the application version\n"
            << "  wallet       Create, inspect, sign, or verify with a wallet\n"
            << "  transaction  Create, inspect, or verify a signed transaction\n"
-           << "  block        Create, inspect, or verify a block\n"
+           << "  block        Create, mine, inspect, or verify a block\n"
            << "  wallet-demo  Generate a temporary wallet and verify a signature\n\n";
     print_wallet_help(output);
     output << '\n';

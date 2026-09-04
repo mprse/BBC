@@ -128,6 +128,7 @@ The current structure is intentionally small:
 |-- src/
 |   |-- app/
 |   |-- chain/
+|   |-- consensus/
 |   |-- core/
 |   |-- crypto/
 |   |-- transaction/
@@ -217,7 +218,7 @@ interfaces over a single large executable target.
 - Once tests exist, a code change is not complete until the relevant build and
   test presets pass.
 
-For the current Stage 3 milestone, the minimum verification commands are:
+For the current Stage 4 milestone, the minimum verification commands are:
 
 ```console
 python tools/build.py test
