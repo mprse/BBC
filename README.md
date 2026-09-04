@@ -354,6 +354,11 @@ are documented in [`docs/mempool.md`](docs/mempool.md), and the decision is
 recorded in
 [`docs/adr/0007-local-persistent-mempool.md`](docs/adr/0007-local-persistent-mempool.md).
 
+The proposed multi-process TCP test harness, actor roles, scenario format,
+control channel, dashboard, synchronization rules, and staged P2P rollout are
+described in
+[`docs/local-network-test-plan.md`](docs/local-network-test-plan.md).
+
 ## Visual Studio Code
 
 Open the repository in Visual Studio Code, then:
