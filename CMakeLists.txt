@@ -44,6 +44,8 @@ add_library(
     src/crypto/secure_memory.cpp
     src/crypto/sodium_runtime.cpp
     src/mempool/mempool.cpp
+    src/network/protocol.cpp
+    src/network/peer_network.cpp
     src/node/control_server.cpp
     src/node/node_config.cpp
     src/storage/chain_store.cpp
@@ -86,11 +88,15 @@ if(BUILD_TESTING)
         tests/storage_tests.cpp
         tests/crypto_tests.cpp
         tests/mempool_tests.cpp
+        tests/network_tests.cpp
         tests/node_tests.cpp
         tests/transaction_tests.cpp
         tests/wallet_tests.cpp
     )
-    target_link_libraries(bbc_tests PRIVATE bbc_core Catch2::Catch2WithMain)
+    target_link_libraries(bbc_tests PRIVATE bbc_core Catch2::Catch2WithMain asio::asio)
+    if(WIN32)
+        target_compile_definitions(bbc_tests PRIVATE _WIN32_WINNT=0x0A00)
+    endif()
     set_target_properties(bbc_tests PROPERTIES CXX_EXTENSIONS OFF)
     bbc_enable_warnings(bbc_tests)
 

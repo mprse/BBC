@@ -390,7 +390,7 @@ or final dumps.
 - structured events, plain output, and terminal dashboard;
 - two processes with no P2P behavior yet.
 
-### Stage 7.1: TCP foundation
+### Stage 7.1: TCP foundation (implemented)
 
 - cross-platform asynchronous TCP abstraction;
 - bounded frame parser and serializer;
@@ -428,15 +428,11 @@ partition controls, healing, and eligible transaction reinsertion.
 
 The following choices remain deliberately open:
 
-1. The cross-platform C++ networking library and event-loop model.
-2. Exact P2P frame layout, message types, limits, and version negotiation.
-3. Regtest network identity, Genesis constants, and Proof-of-Work target.
-4. The JSON library used by the C++ test-control server and structured logger.
-5. How public deterministic wallet fixtures are generated and loaded.
-6. Whether the first dashboard uses a small terminal UI library or an internal
-   ANSI renderer with a plain-output fallback.
+1. Regtest network identity, Genesis constants, and Proof-of-Work target.
+2. How public deterministic wallet fixtures are generated and loaded.
 
-These choices should be resolved in small ADRs. The scenario runner should be
+Resolved Stage 7.0 and 7.1 choices are recorded in ADRs 0008 and 0009. The
+remaining choices should be resolved in small ADRs. The scenario runner should be
 Python because Python is already the cross-platform developer entry point and
 is well suited to subprocess orchestration. Consensus, P2P validation, wallet
 signing, block creation, and mining remain in the C++ executable.

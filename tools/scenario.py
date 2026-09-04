@@ -72,12 +72,15 @@ def enable_ansi_output() -> bool:
 class Actor:
     name: str
     roles: list[str]
-    requested_port: int
+    requested_control_port: int
+    requested_p2p_port: int | None
+    peers: list[str]
     directory: Path
     config_path: Path
     token: str
     process: subprocess.Popen[str] | None = None
     control_port: int | None = None
+    p2p_port: int | None = None
     ready: bool = False
     events: deque[str] = field(default_factory=lambda: deque(maxlen=5))
 
@@ -156,18 +159,18 @@ def load_document(path: Path) -> dict[str, Any]:
     return document
 
 
-def parse_control(value: Any) -> int:
+def parse_endpoint(value: Any, field_name: str) -> int:
     if not isinstance(value, str):
-        raise ScenarioError("Actor control endpoint must be a string.")
+        raise ScenarioError(f"Actor {field_name} endpoint must be a string.")
     host, separator, encoded_port = value.rpartition(":")
     if separator != ":" or host != "127.0.0.1":
-        raise ScenarioError("Actor control endpoint must use 127.0.0.1.")
+        raise ScenarioError(f"Actor {field_name} endpoint must use 127.0.0.1.")
     try:
         port = int(encoded_port)
     except ValueError as error:
-        raise ScenarioError("Actor control port must be an integer.") from error
+        raise ScenarioError(f"Actor {field_name} port must be an integer.") from error
     if port < 0 or port > 65_535:
-        raise ScenarioError("Actor control port must be between 0 and 65535.")
+        raise ScenarioError(f"Actor {field_name} port must be between 0 and 65535.")
     return port
 
 
@@ -195,23 +198,50 @@ def create_actors(document: dict[str, Any], run_directory: Path) -> list[Actor]:
             or len(set(roles)) != len(roles)
         ):
             raise ScenarioError(f"Actor {name} has invalid roles.")
-        port = parse_control(encoded.get("control"))
-        if port != 0 and port in fixed_ports:
-            raise ScenarioError(f"Duplicate fixed control port: {port}")
+        control_port = parse_endpoint(encoded.get("control"), "control")
+        full_node = "full_node" in roles
+        p2p_value = encoded.get("p2p")
+        p2p_port = parse_endpoint(p2p_value, "P2P") if full_node else None
+        if not full_node and p2p_value is not None:
+            raise ScenarioError(f"Actor {name} has P2P without the full_node role.")
+        peers = encoded.get("peers", [])
+        if (
+            not isinstance(peers, list)
+            or any(not isinstance(peer, str) for peer in peers)
+            or len(set(peers)) != len(peers)
+            or (peers and not full_node)
+        ):
+            raise ScenarioError(f"Actor {name} has invalid peers.")
+        for port in (control_port, p2p_port):
+            if port is not None and port != 0 and port in fixed_ports:
+                raise ScenarioError(f"Duplicate fixed actor port: {port}")
         names.add(name)
-        if port != 0:
-            fixed_ports.add(port)
+        for port in (control_port, p2p_port):
+            if port is not None and port != 0:
+                fixed_ports.add(port)
         actor_directory = run_directory / "actors" / name
         actors.append(
             Actor(
                 name=name,
                 roles=roles,
-                requested_port=port,
+                requested_control_port=control_port,
+                requested_p2p_port=p2p_port,
+                peers=peers,
                 directory=actor_directory,
                 config_path=actor_directory / "actor.generated.json",
                 token=secrets.token_hex(32),
             )
         )
+    by_name = {actor.name: actor for actor in actors}
+    for actor in actors:
+        for peer_name in actor.peers:
+            if peer_name == actor.name:
+                raise ScenarioError(f"Actor {actor.name} cannot name itself as a peer.")
+            peer = by_name.get(peer_name)
+            if peer is None:
+                raise ScenarioError(f"Actor {actor.name} references unknown peer {peer_name}.")
+            if "full_node" not in peer.roles:
+                raise ScenarioError(f"Peer {peer_name} is not a full node.")
     return actors
 
 
@@ -224,10 +254,15 @@ def write_actor_config(actor: Actor) -> None:
         "data_directory": str((actor.directory / "data").resolve()),
         "control": {
             "host": "127.0.0.1",
-            "port": actor.requested_port,
+            "port": actor.requested_control_port,
             "token": actor.token,
         },
     }
+    if actor.requested_p2p_port is not None:
+        config["p2p"] = {
+            "host": "127.0.0.1",
+            "port": actor.requested_p2p_port,
+        }
     actor.config_path.write_text(
         json.dumps(config, indent=2) + "\n",
         encoding="utf-8",
@@ -238,12 +273,38 @@ def actor_output_reader(actor: Actor, output_queue: queue.Queue[tuple[Actor, str
     assert actor.process is not None
     assert actor.process.stdout is not None
     log_path = actor.directory / "actor.events.jsonl"
-    with log_path.open("w", encoding="utf-8", newline="\n") as log:
+    with log_path.open("a", encoding="utf-8", newline="\n") as log:
         for line in actor.process.stdout:
             value = line.rstrip("\r\n")
             log.write(value + "\n")
             log.flush()
             output_queue.put((actor, value))
+
+
+def start_actor(
+    actor: Actor,
+    executable: Path,
+    output_queue: queue.Queue[tuple[Actor, str]],
+) -> None:
+    try:
+        write_actor_config(actor)
+        actor.process = subprocess.Popen(
+            [str(executable), "node", "run", "--config", str(actor.config_path)],
+            cwd=PROJECT_ROOT,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            bufsize=1,
+        )
+    except OSError as error:
+        raise ScenarioError(f"Could not start actor {actor.name}: {error}") from error
+    threading.Thread(
+        target=actor_output_reader,
+        args=(actor, output_queue),
+        daemon=True,
+    ).start()
 
 
 def start_actors(
@@ -252,25 +313,34 @@ def start_actors(
     output_queue: queue.Queue[tuple[Actor, str]],
 ) -> None:
     for actor in actors:
-        try:
-            write_actor_config(actor)
-            actor.process = subprocess.Popen(
-                [str(executable), "node", "run", "--config", str(actor.config_path)],
-                cwd=PROJECT_ROOT,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.STDOUT,
-                text=True,
-                encoding="utf-8",
-                errors="replace",
-                bufsize=1,
-            )
-        except OSError as error:
-            raise ScenarioError(f"Could not start actor {actor.name}: {error}") from error
-        threading.Thread(
-            target=actor_output_reader,
-            args=(actor, output_queue),
-            daemon=True,
-        ).start()
+        start_actor(actor, executable, output_queue)
+
+
+def restart_actor(
+    actor: Actor,
+    executable: Path,
+    output_queue: queue.Queue[tuple[Actor, str]],
+    display: Display,
+    timeout_seconds: float,
+    request_id: int,
+) -> int:
+    if actor.process is None or actor.process.poll() is not None or not actor.ready:
+        raise ScenarioError(f"Actor {actor.name} is not running.")
+    previous_p2p_port = actor.p2p_port
+    control_request(actor, request_id, "shutdown", timeout_seconds)
+    request_id += 1
+    try:
+        actor.process.wait(timeout=timeout_seconds)
+    except subprocess.TimeoutExpired as error:
+        raise ScenarioError(f"Actor {actor.name} did not stop for restart.") from error
+    drain_events(output_queue, display)
+    actor.ready = False
+    actor.control_port = None
+    if previous_p2p_port is not None:
+        actor.requested_p2p_port = previous_p2p_port
+    start_actor(actor, executable, output_queue)
+    wait_for_ready([actor], output_queue, display, timeout_seconds)
+    return request_id
 
 
 def process_event(actor: Actor, line: str, display: Display) -> None:
@@ -284,6 +354,14 @@ def process_event(actor: Actor, line: str, display: Display) -> None:
         port = details.get("control_port")
         if isinstance(port, int) and 0 < port <= 65_535:
             actor.control_port = port
+            if "full_node" not in actor.roles:
+                actor.ready = True
+        p2p_port = details.get("p2p_port")
+        if isinstance(p2p_port, int) and 0 < p2p_port <= 65_535:
+            actor.p2p_port = p2p_port
+        if actor.control_port is not None and (
+            "full_node" not in actor.roles or actor.p2p_port is not None
+        ):
             actor.ready = True
 
 
@@ -312,7 +390,13 @@ def wait_for_ready(
         process_event(actor, line, display)
 
 
-def control_request(actor: Actor, request_id: int, method: str, timeout: float) -> Any:
+def control_request(
+    actor: Actor,
+    request_id: int,
+    method: str,
+    timeout: float,
+    params: dict[str, Any] | None = None,
+) -> Any:
     if actor.control_port is None:
         raise ScenarioError(f"Actor {actor.name} has no control port.")
     request = {
@@ -320,6 +404,8 @@ def control_request(actor: Actor, request_id: int, method: str, timeout: float) 
         "method": method,
         "token": actor.token,
     }
+    if params is not None:
+        request["params"] = params
     try:
         with socket.create_connection(("127.0.0.1", actor.control_port), timeout) as connection:
             connection.settimeout(timeout)
@@ -355,6 +441,113 @@ def actor_selection(value: Any, actors: list[Actor]) -> list[Actor]:
         raise ScenarioError(f"Unknown actor in selection: {error.args[0]}") from error
 
 
+def drain_events(
+    output_queue: queue.Queue[tuple[Actor, str]],
+    display: Display,
+) -> None:
+    while True:
+        try:
+            actor, line = output_queue.get_nowait()
+        except queue.Empty:
+            return
+        process_event(actor, line, display)
+
+
+def connect_scenario_peers(
+    actors: list[Actor],
+    timeout_seconds: float,
+    request_id: int,
+) -> int:
+    by_name = {actor.name: actor for actor in actors}
+    for actor in actors:
+        for peer_name in actor.peers:
+            peer = by_name[peer_name]
+            if peer.p2p_port is None:
+                raise ScenarioError(f"Peer {peer.name} has no resolved P2P port.")
+            control_request(
+                actor,
+                request_id,
+                "connect_peer",
+                timeout_seconds,
+                {"host": "127.0.0.1", "port": peer.p2p_port},
+            )
+            request_id += 1
+    return request_id
+
+
+def expected_peer_counts(actors: list[Actor]) -> dict[str, int]:
+    neighbors: dict[str, set[str]] = {
+        actor.name: set() for actor in actors if "full_node" in actor.roles
+    }
+    for actor in actors:
+        for peer_name in actor.peers:
+            neighbors[actor.name].add(peer_name)
+            neighbors[peer_name].add(actor.name)
+    return {name: len(values) for name, values in neighbors.items()}
+
+
+def wait_for_peer_connections(
+    actors: list[Actor],
+    output_queue: queue.Queue[tuple[Actor, str]],
+    display: Display,
+    timeout_seconds: float,
+) -> None:
+    expected = expected_peer_counts(actors)
+    by_name = {actor.name: actor for actor in actors}
+    deadline = time.monotonic() + timeout_seconds
+    request_id = 200_000
+    latest: dict[str, int] = {}
+    while True:
+        drain_events(output_queue, display)
+        complete = True
+        for name, count in expected.items():
+            status = control_request(
+                by_name[name], request_id, "status", timeout_seconds
+            )
+            request_id += 1
+            actual = status["p2p"]["handshake_complete_count"]
+            latest[name] = actual
+            if actual != count:
+                complete = False
+        if complete:
+            return
+        if time.monotonic() >= deadline:
+            raise ScenarioError(
+                f"Timed out waiting for P2P handshakes: {latest}, expected {expected}."
+            )
+        time.sleep(0.05)
+
+
+def wait_for_pongs(
+    expected: dict[str, int],
+    actors: list[Actor],
+    output_queue: queue.Queue[tuple[Actor, str]],
+    display: Display,
+    timeout_seconds: float,
+) -> None:
+    by_name = {actor.name: actor for actor in actors}
+    deadline = time.monotonic() + timeout_seconds
+    request_id = 300_000
+    while True:
+        drain_events(output_queue, display)
+        missing: list[str] = []
+        for name, nonce in expected.items():
+            status = control_request(
+                by_name[name], request_id, "status", timeout_seconds
+            )
+            request_id += 1
+            peers = status["p2p"]["peers"]
+            if not peers or any(peer["last_pong_nonce"] != nonce for peer in peers):
+                missing.append(name)
+        if not missing:
+            return
+        if time.monotonic() >= deadline:
+            raise ScenarioError(
+                f"Timed out waiting for PONG responses from: {', '.join(missing)}."
+            )
+        time.sleep(0.05)
+
+
 def run_steps(
     steps: Any,
     actors: list[Actor],
@@ -367,6 +560,7 @@ def run_steps(
         raise ScenarioError("Scenario steps must be an array.")
     started = False
     dumps: dict[str, Any] = {}
+    expected_pongs: dict[str, int] = {}
     request_id = 1
     for step in steps:
         if not isinstance(step, dict):
@@ -383,6 +577,50 @@ def run_steps(
             display.controller("Waiting for all actors")
             wait_for_ready(actors, output_queue, display, timeout_seconds)
             display.controller("All actors are ready")
+        elif step.get("command") == "connect_all":
+            if not all(actor.ready for actor in actors):
+                raise ScenarioError("All actors must be ready before connect_all.")
+            display.controller("Connecting scenario peers")
+            request_id = connect_scenario_peers(actors, timeout_seconds, request_id)
+        elif step.get("wait") == "full_nodes_connected":
+            display.controller("Waiting for P2P handshakes")
+            wait_for_peer_connections(
+                actors, output_queue, display, timeout_seconds
+            )
+            display.controller("Full nodes are connected")
+        elif step.get("command") == "ping":
+            selected = actor_selection(step.get("actors"), actors)
+            display.controller("Sending PING messages")
+            expected_pongs.clear()
+            for actor in selected:
+                result = control_request(
+                    actor, request_id, "ping", timeout_seconds
+                )
+                request_id += 1
+                expected_pongs[actor.name] = result["nonce"]
+        elif step.get("wait") == "pongs":
+            if not expected_pongs:
+                raise ScenarioError("PING must be sent before waiting for PONG.")
+            display.controller("Waiting for PONG responses")
+            wait_for_pongs(
+                expected_pongs, actors, output_queue, display, timeout_seconds
+            )
+            display.controller("All PONG responses received")
+        elif step.get("command") == "restart":
+            name = step.get("actor")
+            if not isinstance(name, str):
+                raise ScenarioError("restart requires an actor name.")
+            actor = actor_selection([name], actors)[0]
+            display.controller(f"Restarting {actor.name}")
+            request_id = restart_actor(
+                actor,
+                executable,
+                output_queue,
+                display,
+                timeout_seconds,
+                request_id,
+            )
+            display.controller(f"{actor.name} restarted")
         elif step.get("command") == "dump":
             if not all(actor.ready for actor in actors):
                 raise ScenarioError("All actors must be ready before dump.")
@@ -394,7 +632,7 @@ def run_steps(
                 dump_path = actor.directory / "final-dump.json"
                 dump_path.write_text(json.dumps(result, indent=2) + "\n", encoding="utf-8")
         else:
-            raise ScenarioError(f"Unsupported Stage 7.0 step: {step}")
+            raise ScenarioError(f"Unsupported scenario step: {step}")
     if not started:
         raise ScenarioError("Scenario must contain start_all.")
     return dumps
@@ -455,8 +693,28 @@ def run_assertions(assertions: Any, dumps: dict[str, Any], actors: list[Actor]) 
                         f"Assertion failed: {actor.name} mempool size is {actual}, "
                         f"expected {expected}."
                     )
+        elif "peer_count" in assertion:
+            expected = assertion["peer_count"]
+            if (
+                not isinstance(expected, dict)
+                or not isinstance(expected.get("actor"), str)
+                or not isinstance(expected.get("value"), int)
+            ):
+                raise ScenarioError("peer_count assertion is invalid.")
+            actor = actor_selection([expected["actor"]], actors)[0]
+            try:
+                actual = dumps[actor.name]["p2p"]["handshake_complete_count"]
+            except KeyError as error:
+                raise ScenarioError(
+                    f"peer_count has no P2P dump field for {actor.name}."
+                ) from error
+            if actual != expected["value"]:
+                raise ScenarioError(
+                    f"Assertion failed: {actor.name} has {actual} peers, "
+                    f"expected {expected['value']}."
+                )
         else:
-            raise ScenarioError(f"Unsupported Stage 7.0 assertion: {assertion}")
+            raise ScenarioError(f"Unsupported scenario assertion: {assertion}")
 
 
 def shutdown_actors(actors: Iterable[Actor], timeout_seconds: float) -> None:

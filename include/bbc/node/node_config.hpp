@@ -19,6 +19,7 @@ struct NodeConfig {
     std::string name;
     std::vector<ActorRole> roles;
     std::filesystem::path data_directory;
+    std::uint16_t p2p_port = 0;
     std::uint16_t control_port = 0;
     std::string control_token;
 
@@ -33,6 +34,7 @@ enum class NodeConfigError {
     invalid_name,
     invalid_roles,
     invalid_data_directory,
+    invalid_p2p_endpoint,
     invalid_control_endpoint,
     invalid_control_token,
 };

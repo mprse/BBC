@@ -9,23 +9,37 @@
     {
       "name": "node-a",
       "roles": ["wallet", "full_node"],
-      "control": "127.0.0.1:0"
+      "control": "127.0.0.1:0",
+      "p2p": "127.0.0.1:0",
+      "peers": ["node-b"]
     },
     {
       "name": "node-b",
       "roles": ["wallet", "full_node"],
-      "control": "127.0.0.1:0"
+      "control": "127.0.0.1:0",
+      "p2p": "127.0.0.1:0",
+      "peers": ["node-a"]
     }
   ],
   "steps": [
     {"command": "start_all"},
     {"wait": "all_ready"},
+    {"command": "connect_all"},
+    {"wait": "full_nodes_connected"},
+    {"command": "ping", "actors": ["node-a", "node-b"]},
+    {"wait": "pongs"},
+    {"command": "restart", "actor": "node-b"},
+    {"wait": "full_nodes_connected"},
+    {"command": "ping", "actors": ["node-a", "node-b"]},
+    {"wait": "pongs"},
     {"command": "dump", "actors": "all"}
   ],
   "assertions": [
     {"all_ready": true},
     {"same_tip": ["node-a", "node-b"]},
     {"mempool_size": 0},
+    {"peer_count": {"actor": "node-a", "value": 1}},
+    {"peer_count": {"actor": "node-b", "value": 1}},
     {
       "height": {
         "actors": ["node-a", "node-b"],

@@ -380,6 +380,24 @@ configuration, control methods, output, and artifacts are documented in
 decision is recorded in
 [`docs/adr/0008-stage-7-networking-foundation.md`](docs/adr/0008-stage-7-networking-foundation.md).
 
+## Stage 7.1: TCP framing and handshake
+
+The same scenario now opens a distinct loopback P2P listener for each full node,
+connects the declared topology, completes the binary `HELLO` handshake, checks
+`PING/PONG` in both directions, restarts one node, and verifies automatic
+reconnection before collecting final dumps:
+
+```powershell
+python tools/scenario.py scenarios/two-actor-smoke.json --no-ui
+```
+
+P2P status is available through the test-control `status` and `dump` methods.
+The canonical frame bytes, handshake fields, limits, duplicate-connection rule,
+and disconnect behavior are documented in
+[`docs/p2p-protocol-v1.md`](docs/p2p-protocol-v1.md) and accepted by
+[`docs/adr/0009-p2p-framing-and-handshake.md`](docs/adr/0009-p2p-framing-and-handshake.md).
+Transaction and block propagation are not part of Stage 7.1.
+
 ## Visual Studio Code
 
 Open the repository in Visual Studio Code, then:

@@ -86,6 +86,25 @@ NodeConfigResult load_node_config(const std::filesystem::path& path) {
         document["data_directory"].get_ref<const std::string&>().empty()) {
         return NodeConfigResult{NodeConfigError::invalid_data_directory};
     }
+    std::uint64_t p2p_port = 0;
+    const bool full_node = std::ranges::find(roles, ActorRole::full_node) != roles.end();
+    if (full_node) {
+        if (!document.contains("p2p") || !document["p2p"].is_object()) {
+            return NodeConfigResult{NodeConfigError::invalid_p2p_endpoint};
+        }
+        const nlohmann::json& p2p = document["p2p"];
+        if (!p2p.contains("host") || !p2p["host"].is_string() ||
+            p2p["host"].get<std::string>() != "127.0.0.1" ||
+            !p2p.contains("port") || !p2p["port"].is_number_unsigned()) {
+            return NodeConfigResult{NodeConfigError::invalid_p2p_endpoint};
+        }
+        p2p_port = p2p["port"].get<std::uint64_t>();
+        if (p2p_port > 65'535) {
+            return NodeConfigResult{NodeConfigError::invalid_p2p_endpoint};
+        }
+    } else if (document.contains("p2p")) {
+        return NodeConfigResult{NodeConfigError::invalid_p2p_endpoint};
+    }
     if (!document.contains("control") || !document["control"].is_object()) {
         return NodeConfigResult{NodeConfigError::invalid_control_endpoint};
     }
@@ -111,6 +130,7 @@ NodeConfigResult load_node_config(const std::filesystem::path& path) {
         name,
         std::move(roles),
         std::filesystem::path{document["data_directory"].get<std::string>()},
+        static_cast<std::uint16_t>(p2p_port),
         static_cast<std::uint16_t>(port),
         token,
     }};
@@ -159,6 +179,8 @@ std::string_view node_config_error_message(const NodeConfigError error) noexcept
             return "node configuration has invalid actor roles";
         case NodeConfigError::invalid_data_directory:
             return "node configuration has an invalid data directory";
+        case NodeConfigError::invalid_p2p_endpoint:
+            return "node configuration has an invalid P2P endpoint";
         case NodeConfigError::invalid_control_endpoint:
             return "node configuration has an invalid control endpoint";
         case NodeConfigError::invalid_control_token:
