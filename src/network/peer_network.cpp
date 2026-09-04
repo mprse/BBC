@@ -40,9 +40,14 @@ std::string endpoint_text(const asio::ip::tcp::endpoint& endpoint) {
 
 class PeerNetwork::Impl final {
 public:
-    Impl(PeerNetworkConfig config, PeerEventHandler event_handler)
+    Impl(
+        PeerNetworkConfig config,
+        PeerEventHandler event_handler,
+        PeerMessageHandler message_handler
+    )
         : config_(std::move(config)),
           event_handler_(std::move(event_handler)),
+          message_handler_(std::move(message_handler)),
           work_(asio::make_work_guard(context_)),
           acceptor_(context_) {
         crypto::detail::ensure_sodium_initialized();
@@ -55,16 +60,18 @@ public:
 
     [[nodiscard]] bool start(std::string& error) {
         try {
-            const asio::ip::tcp::endpoint endpoint{
-                asio::ip::make_address_v4("127.0.0.1"),
-                config_.listen_port,
-            };
-            acceptor_.open(endpoint.protocol());
-            acceptor_.set_option(asio::socket_base::reuse_address{true});
-            acceptor_.bind(endpoint);
-            acceptor_.listen(asio::socket_base::max_listen_connections);
-            listen_port_ = acceptor_.local_endpoint().port();
-            accept_next();
+            if (config_.listen) {
+                const asio::ip::tcp::endpoint endpoint{
+                    asio::ip::make_address_v4("127.0.0.1"),
+                    config_.listen_port,
+                };
+                acceptor_.open(endpoint.protocol());
+                acceptor_.set_option(asio::socket_base::reuse_address{true});
+                acceptor_.bind(endpoint);
+                acceptor_.listen(asio::socket_base::max_listen_connections);
+                listen_port_ = acceptor_.local_endpoint().port();
+                accept_next();
+            }
             thread_ = std::thread{[this] { context_.run(); }};
             return true;
         } catch (const std::exception& exception) {
@@ -127,6 +134,43 @@ public:
         return nonce;
     }
 
+    [[nodiscard]] bool send(
+        const std::uint64_t peer_id,
+        const MessageType type,
+        crypto::Bytes payload
+    ) {
+        const std::vector<PeerStatus> snapshot = peers();
+        const bool known = snapshot.end() != std::ranges::find_if(
+            snapshot, [peer_id](const PeerStatus& peer) {
+                return peer.id == peer_id && peer.handshake_complete;
+            }
+        );
+        if (!known) {
+            return false;
+        }
+        asio::post(context_, [this, peer_id, type, payload = std::move(payload)] {
+            const auto found = sessions_.find(peer_id);
+            if (found != sessions_.end()) {
+                found->second->send_message(type, payload);
+            }
+        });
+        return true;
+    }
+
+    void broadcast(
+        const MessageType type,
+        crypto::Bytes payload,
+        const std::optional<std::uint64_t> excluded_peer
+    ) {
+        asio::post(context_, [this, type, payload = std::move(payload), excluded_peer] {
+            for (const auto& [id, session] : sessions_) {
+                if (id != excluded_peer && session->handshake_complete()) {
+                    session->send_message(type, payload);
+                }
+            }
+        });
+    }
+
     [[nodiscard]] std::vector<PeerStatus> peers() const {
         std::lock_guard lock{state_mutex_};
         std::vector<PeerStatus> result;
@@ -182,6 +226,12 @@ private:
             last_ping_nonce_ = nonce;
             owner_.record_status(*this);
             send(MessageType::ping, serialize_ping_nonce(nonce));
+        }
+
+        void send_message(const MessageType type, const crypto::ByteView payload) {
+            if (handshake_complete_ && !stopped_) {
+                send(type, payload);
+            }
         }
 
         void stop(
@@ -242,7 +292,7 @@ private:
 
     private:
         void send(const MessageType type, const crypto::ByteView payload) {
-            crypto::Bytes frame = serialize_frame(type, payload);
+            crypto::Bytes frame = serialize_frame(type, payload, owner_.config_.chain_id);
             if (frame.empty() || queued_bytes_ + frame.size() > maximum_outbound_queue_size) {
                 stop("outbound queue limit exceeded", true);
                 return;
@@ -290,7 +340,8 @@ private:
                         return;
                     }
                     const FrameHeaderResult decoded = deserialize_frame_header(
-                        self->header_buffer_
+                        self->header_buffer_,
+                        self->owner_.config_.chain_id
                     );
                     if (!decoded.has_value()) {
                         self->stop(
@@ -389,8 +440,8 @@ private:
                 }
                 return true;
             }
-            stop("unsupported message", true);
-            return false;
+            owner_.handle_application_message(id_, type, payload);
+            return true;
         }
 
         [[nodiscard]] bool handle_hello(const crypto::ByteView payload) {
@@ -409,8 +460,8 @@ private:
                 stop("self-connection rejected", true);
                 return false;
             }
-            if ((hello.services & full_node_service) == 0) {
-                stop("peer does not advertise full-node service", true);
+            if ((hello.services & (full_node_service | mining_service)) == 0) {
+                stop("peer does not advertise a supported service", true);
                 return false;
             }
             const std::uint16_t minimum = std::max(
@@ -708,6 +759,16 @@ private:
         }
     }
 
+    void handle_application_message(
+        const std::uint64_t peer_id,
+        const MessageType type,
+        const crypto::ByteView payload
+    ) const {
+        if (message_handler_) {
+            message_handler_(peer_id, type, crypto::Bytes{payload.begin(), payload.end()});
+        }
+    }
+
     [[nodiscard]] std::uint64_t reserve_ping_nonce() {
         std::lock_guard lock{state_mutex_};
         return next_ping_nonce_++;
@@ -715,6 +776,7 @@ private:
 
     PeerNetworkConfig config_;
     PeerEventHandler event_handler_;
+    PeerMessageHandler message_handler_;
     asio::io_context context_;
     asio::executor_work_guard<asio::io_context::executor_type> work_;
     asio::ip::tcp::acceptor acceptor_;
@@ -734,8 +796,13 @@ private:
 
 PeerNetwork::PeerNetwork(
     PeerNetworkConfig config,
-    PeerEventHandler event_handler
-) : impl_(std::make_unique<Impl>(std::move(config), std::move(event_handler))) {}
+    PeerEventHandler event_handler,
+    PeerMessageHandler message_handler
+) : impl_(std::make_unique<Impl>(
+        std::move(config),
+        std::move(event_handler),
+        std::move(message_handler)
+    )) {}
 
 PeerNetwork::~PeerNetwork() = default;
 
@@ -761,6 +828,22 @@ bool PeerNetwork::connect(
 
 std::uint64_t PeerNetwork::ping_all() {
     return impl_->ping_all();
+}
+
+bool PeerNetwork::send(
+    const std::uint64_t peer_id,
+    const MessageType type,
+    const crypto::ByteView payload
+) {
+    return impl_->send(peer_id, type, crypto::Bytes{payload.begin(), payload.end()});
+}
+
+void PeerNetwork::broadcast(
+    const MessageType type,
+    const crypto::ByteView payload,
+    const std::optional<std::uint64_t> excluded_peer
+) {
+    impl_->broadcast(type, crypto::Bytes{payload.begin(), payload.end()}, excluded_peer);
 }
 
 std::vector<PeerStatus> PeerNetwork::peers() const {

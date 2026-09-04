@@ -38,6 +38,11 @@ TEST_CASE("fixed Proof of Work target is a protocol constant", "[pow]") {
         bbc::crypto::to_upper_hex(bbc::consensus::fixed_difficulty_target()) ==
         "000000FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF"
     );
+    CHECK(
+        bbc::crypto::to_upper_hex(bbc::consensus::fixed_difficulty_target(2)) ==
+        "000FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF"
+    );
+    CHECK(bbc::chain::genesis_block(1).id() != bbc::chain::genesis_block(2).id());
 }
 
 TEST_CASE("Proof of Work comparison is strict and big endian", "[pow]") {

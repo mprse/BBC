@@ -1,6 +1,7 @@
 #include "bbc/chain/block.hpp"
 
 #include "bbc/crypto/hash.hpp"
+#include "bbc/core/network.hpp"
 
 #include <algorithm>
 #include <array>
@@ -293,7 +294,7 @@ crypto::Hash256 calculate_transaction_root(
 }
 
 BlockResult create_block(BlockFields fields) {
-    if (fields.chain_id != core::chain_id) {
+    if (core::network_parameters_for_chain(fields.chain_id) == nullptr) {
         return BlockResult{BlockError::unsupported_chain};
     }
     if (fields.height == 0) {
@@ -337,7 +338,7 @@ BlockResult deserialize_block(const crypto::ByteView encoded) {
     }
 
     const std::uint32_t chain_id = read_u32_le(encoded, chain_id_offset);
-    if (chain_id != core::chain_id) {
+    if (core::network_parameters_for_chain(chain_id) == nullptr) {
         return BlockResult{BlockError::unsupported_chain};
     }
     const std::uint32_t transaction_count =
@@ -391,7 +392,7 @@ BlockResult deserialize_block(const crypto::ByteView encoded) {
     }
 
     if (height == 0) {
-        Block canonical_genesis = genesis_block();
+        Block canonical_genesis = genesis_block(chain_id);
         if (!std::ranges::equal(encoded, canonical_genesis.serialize())) {
             return BlockResult{BlockError::invalid_genesis};
         }
@@ -417,10 +418,10 @@ BlockResult deserialize_block(const crypto::ByteView encoded) {
     }};
 }
 
-Block genesis_block() {
+Block genesis_block(const std::uint32_t chain_id) {
     const std::vector<transaction::SignedTransaction> transactions;
     return Block{
-        core::chain_id,
+        chain_id,
         0,
         crypto::Hash256{},
         calculate_transaction_root(transactions),

@@ -40,10 +40,12 @@ class ChainStoreResult;
 class ChainStore final {
 public:
     [[nodiscard]] static ChainStoreResult initialize(
-        const std::filesystem::path& data_directory
+        const std::filesystem::path& data_directory,
+        std::uint32_t chain_id = 1
     );
     [[nodiscard]] static ChainStoreResult open(
-        const std::filesystem::path& data_directory
+        const std::filesystem::path& data_directory,
+        std::uint32_t chain_id = 1
     );
 
     [[nodiscard]] const std::filesystem::path& data_directory() const noexcept;

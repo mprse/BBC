@@ -55,6 +55,7 @@ bbc::network::PeerNetworkConfig test_network_config() {
     const bbc::chain::Block genesis = bbc::chain::genesis_block();
     return {
         0,
+        true,
         genesis.chain_id(),
         bbc::network::full_node_service,
         genesis.height(),
@@ -364,7 +365,7 @@ TEST_CASE("P2P handshake rejects invalid ordering and identity", "[network]") {
             "no common protocol version"
         ));
     }
-    SECTION("missing full-node service") {
+    SECTION("missing supported service") {
         CHECK(rejected_after_frames(
             [](bbc::network::HelloPayload hello)
                 -> std::vector<bbc::crypto::Bytes> {
@@ -375,7 +376,7 @@ TEST_CASE("P2P handshake rejects invalid ordering and identity", "[network]") {
                     bbc::network::serialize_hello(hello)
                 )};
             },
-            "peer does not advertise full-node service"
+            "peer does not advertise a supported service"
         ));
     }
     SECTION("self connection") {
@@ -404,4 +405,23 @@ TEST_CASE("P2P handshake rejects invalid ordering and identity", "[network]") {
             "duplicate HELLO"
         ));
     }
+}
+
+TEST_CASE("network profiles use isolated P2P magic", "[network]") {
+    const bbc::crypto::Bytes payload = bbc::network::serialize_ping_nonce(7);
+    const bbc::crypto::Bytes development = bbc::network::serialize_frame(
+        bbc::network::MessageType::ping, payload, 1
+    );
+    const bbc::crypto::Bytes regtest = bbc::network::serialize_frame(
+        bbc::network::MessageType::ping, payload, 2
+    );
+    REQUIRE(development.size() == regtest.size());
+    CHECK(development[3] == 1);
+    CHECK(regtest[3] == 2);
+    CHECK_FALSE(bbc::network::deserialize_frame_header(
+        std::span{regtest}.first(bbc::network::frame_header_size), 1
+    ).has_value());
+    CHECK(bbc::network::deserialize_frame_header(
+        std::span{regtest}.first(bbc::network::frame_header_size), 2
+    ).has_value());
 }

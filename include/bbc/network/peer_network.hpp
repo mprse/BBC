@@ -1,6 +1,7 @@
 #pragma once
 
 #include "bbc/crypto/types.hpp"
+#include "bbc/network/protocol.hpp"
 
 #include <cstdint>
 #include <functional>
@@ -39,6 +40,7 @@ struct PeerEvent {
 
 struct PeerNetworkConfig {
     std::uint16_t listen_port = 0;
+    bool listen = true;
     std::uint32_t chain_id = 0;
     std::uint64_t services = 0;
     std::uint64_t tip_height = 0;
@@ -47,10 +49,19 @@ struct PeerNetworkConfig {
 };
 
 using PeerEventHandler = std::function<void(const PeerEvent&)>;
+using PeerMessageHandler = std::function<void(
+    std::uint64_t,
+    MessageType,
+    const crypto::Bytes&
+)>;
 
 class PeerNetwork final {
 public:
-    PeerNetwork(PeerNetworkConfig config, PeerEventHandler event_handler);
+    PeerNetwork(
+        PeerNetworkConfig config,
+        PeerEventHandler event_handler,
+        PeerMessageHandler message_handler = {}
+    );
     PeerNetwork(const PeerNetwork&) = delete;
     PeerNetwork& operator=(const PeerNetwork&) = delete;
     ~PeerNetwork();
@@ -65,6 +76,16 @@ public:
         std::string& error
     );
     [[nodiscard]] std::uint64_t ping_all();
+    [[nodiscard]] bool send(
+        std::uint64_t peer_id,
+        MessageType type,
+        crypto::ByteView payload
+    );
+    void broadcast(
+        MessageType type,
+        crypto::ByteView payload,
+        std::optional<std::uint64_t> excluded_peer = std::nullopt
+    );
     [[nodiscard]] std::vector<PeerStatus> peers() const;
 
 private:

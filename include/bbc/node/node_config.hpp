@@ -1,5 +1,7 @@
 #pragma once
 
+#include "bbc/core/network.hpp"
+
 #include <cstdint>
 #include <filesystem>
 #include <string>
@@ -19,6 +21,7 @@ struct NodeConfig {
     std::string name;
     std::vector<ActorRole> roles;
     std::filesystem::path data_directory;
+    core::NetworkProfile network_profile = core::NetworkProfile::development;
     std::uint16_t p2p_port = 0;
     std::uint16_t control_port = 0;
     std::string control_token;
@@ -34,6 +37,7 @@ enum class NodeConfigError {
     invalid_name,
     invalid_roles,
     invalid_data_directory,
+    invalid_network_profile,
     invalid_p2p_endpoint,
     invalid_control_endpoint,
     invalid_control_token,

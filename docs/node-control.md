@@ -5,6 +5,7 @@
 Stage 7.0 introduced a long-running BBC actor process and a Python supervisor.
 Stage 7.1 adds a separate binary P2P listener for full-node actors, explicit
 scenario topology, handshake observation, ping checks, and reconnect tests.
+Stage 7.3 adds network profiles and scenario-controlled mining workers.
 
 ## Actor command
 
@@ -20,6 +21,7 @@ The configuration is generated inside an ignored scenario run directory:
   "name": "node-a",
   "roles": ["wallet", "full_node"],
   "data_directory": "<absolute-run-directory>",
+  "network": "development",
   "p2p": {
     "host": "127.0.0.1",
     "port": 0
@@ -38,12 +40,15 @@ must have a `p2p` object; actors without that role must not have one. Both hosts
 must be exactly `127.0.0.1`. Port zero asks the operating system for an available
 ephemeral port; a nonzero port must fit an unsigned 16-bit value. Control tokens
 contain between 32 and 256 characters.
+`network` is required and is either `development` or `regtest`.
 
-The Stage 7.0 wallet is ephemeral and exists only in actor memory. A full-node
-actor initializes canonical Genesis in its empty private data directory or
-validates and opens an existing store. Persistent scenario wallets, transaction
-submission, and mining are later increments. Stage 7.1 P2P behavior is defined
-in [`p2p-protocol-v1.md`](p2p-protocol-v1.md).
+The scenario wallet is ephemeral and exists only in actor memory. A full-node
+actor initializes profile-specific Genesis in its empty private data directory
+or validates and opens an existing store. Stage 7.3 adds outbound-only mining
+workers and the `start_mining` control action. Persistent scenario wallets and
+transaction submission remain later increments. P2P behavior is defined in
+[`p2p-protocol-v1.md`](p2p-protocol-v1.md) and
+[`mining-protocol-v1.md`](mining-protocol-v1.md).
 
 ## Control protocol
 
@@ -82,6 +87,8 @@ Supported methods are:
 - `connect_peer`: start or retain an outbound P2P connection to the loopback
   endpoint supplied in `params`;
 - `ping`: send a P2P `PING` to every handshaken peer and return its nonce;
+- `start_mining`: ask the miner's connected full node for a block template and
+  begin bounded mining work;
 - `shutdown`: acknowledge and stop the accept loop gracefully.
 
 Requests with missing fields, invalid JSON, an invalid token, or an unknown
@@ -131,11 +138,14 @@ Implemented steps are:
 - `{"wait": "full_nodes_connected"}`;
 - `{"command": "ping", "actors": ["node-a", "node-b"]}`;
 - `{"wait": "pongs"}`;
+- `{"command": "start_mining", "actors": ["miner-a", "miner-b"]}`;
+- `{"wait": "mining_complete", "height": 1}`;
 - `{"command": "restart", "actor": "node-b"}`;
 - `{"command": "dump", "actors": "all"}`.
 
 It implements `all_ready`, `same_tip`, exact `height`, full-node
-`mempool_size`, and per-actor `peer_count` assertions. Restart preserves the
+`mempool_size`, per-actor `peer_count`, `mining_outcome`, and `winner_reward`
+assertions. Restart preserves the
 actor data directory and resolved P2P port, allowing configured peers to prove
 automatic reconnect. Unsupported future steps and assertions fail explicitly
 rather than being ignored.

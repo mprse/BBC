@@ -17,6 +17,7 @@ import subprocess
 import sys
 import threading
 import time
+from concurrent.futures import ThreadPoolExecutor
 from collections import deque
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
@@ -75,9 +76,11 @@ class Actor:
     requested_control_port: int
     requested_p2p_port: int | None
     peers: list[str]
+    mining_source: str | None
     directory: Path
     config_path: Path
     token: str
+    network_profile: str
     process: subprocess.Popen[str] | None = None
     control_port: int | None = None
     p2p_port: int | None = None
@@ -179,6 +182,10 @@ def create_actors(document: dict[str, Any], run_directory: Path) -> list[Actor]:
     if not isinstance(encoded_actors, list) or not encoded_actors:
         raise ScenarioError("Scenario must contain at least one actor.")
 
+    network = document.get("network", {})
+    profile = network.get("profile") if isinstance(network, dict) else None
+    if profile not in {"development", "regtest"}:
+        raise ScenarioError("Network profile must be development or regtest.")
     actors: list[Actor] = []
     names: set[str] = set()
     fixed_ports: set[int] = set()
@@ -212,6 +219,12 @@ def create_actors(document: dict[str, Any], run_directory: Path) -> list[Actor]:
             or (peers and not full_node)
         ):
             raise ScenarioError(f"Actor {name} has invalid peers.")
+        mining_source = encoded.get("mining_source")
+        if "miner" in roles:
+            if not isinstance(mining_source, str):
+                raise ScenarioError(f"Miner {name} requires mining_source.")
+        elif mining_source is not None:
+            raise ScenarioError(f"Actor {name} has mining_source without the miner role.")
         for port in (control_port, p2p_port):
             if port is not None and port != 0 and port in fixed_ports:
                 raise ScenarioError(f"Duplicate fixed actor port: {port}")
@@ -227,9 +240,11 @@ def create_actors(document: dict[str, Any], run_directory: Path) -> list[Actor]:
                 requested_control_port=control_port,
                 requested_p2p_port=p2p_port,
                 peers=peers,
+                mining_source=mining_source,
                 directory=actor_directory,
                 config_path=actor_directory / "actor.generated.json",
                 token=secrets.token_hex(32),
+                network_profile=profile,
             )
         )
     by_name = {actor.name: actor for actor in actors}
@@ -242,6 +257,12 @@ def create_actors(document: dict[str, Any], run_directory: Path) -> list[Actor]:
                 raise ScenarioError(f"Actor {actor.name} references unknown peer {peer_name}.")
             if "full_node" not in peer.roles:
                 raise ScenarioError(f"Peer {peer_name} is not a full node.")
+        if actor.mining_source is not None:
+            source = by_name.get(actor.mining_source)
+            if source is None or "full_node" not in source.roles:
+                raise ScenarioError(
+                    f"Mining source {actor.mining_source} is not a full node."
+                )
     return actors
 
 
@@ -252,6 +273,7 @@ def write_actor_config(actor: Actor) -> None:
         "name": actor.name,
         "roles": actor.roles,
         "data_directory": str((actor.directory / "data").resolve()),
+        "network": actor.network_profile,
         "control": {
             "host": "127.0.0.1",
             "port": actor.requested_control_port,
@@ -472,17 +494,34 @@ def connect_scenario_peers(
                 {"host": "127.0.0.1", "port": peer.p2p_port},
             )
             request_id += 1
+        if actor.mining_source is not None:
+            peer = by_name[actor.mining_source]
+            if peer.p2p_port is None:
+                raise ScenarioError(f"Mining source {peer.name} has no P2P port.")
+            control_request(
+                actor,
+                request_id,
+                "connect_peer",
+                timeout_seconds,
+                {"host": "127.0.0.1", "port": peer.p2p_port},
+            )
+            request_id += 1
     return request_id
 
 
 def expected_peer_counts(actors: list[Actor]) -> dict[str, int]:
     neighbors: dict[str, set[str]] = {
-        actor.name: set() for actor in actors if "full_node" in actor.roles
+        actor.name: set()
+        for actor in actors
+        if "full_node" in actor.roles or "miner" in actor.roles
     }
     for actor in actors:
         for peer_name in actor.peers:
             neighbors[actor.name].add(peer_name)
             neighbors[peer_name].add(actor.name)
+        if actor.mining_source is not None:
+            neighbors[actor.name].add(actor.mining_source)
+            neighbors[actor.mining_source].add(actor.name)
     return {name: len(values) for name, values in neighbors.items()}
 
 
@@ -548,6 +587,40 @@ def wait_for_pongs(
         time.sleep(0.05)
 
 
+def wait_for_mining(
+    actors: list[Actor],
+    output_queue: queue.Queue[tuple[Actor, str]],
+    display: Display,
+    timeout_seconds: float,
+    height: int,
+) -> None:
+    miners = [actor for actor in actors if "miner" in actor.roles]
+    full_nodes = [actor for actor in actors if "full_node" in actor.roles]
+    deadline = time.monotonic() + timeout_seconds
+    request_id = 400_000
+    while True:
+        drain_events(output_queue, display)
+        miner_states: list[str] = []
+        heights: list[int] = []
+        for actor in miners:
+            status = control_request(actor, request_id, "status", timeout_seconds)
+            request_id += 1
+            miner_states.append(status["mining"]["state"])
+        for actor in full_nodes:
+            status = control_request(actor, request_id, "status", timeout_seconds)
+            request_id += 1
+            heights.append(status["chain"]["height"])
+        if heights and all(value == height for value in heights) and all(
+            state in {"accepted", "cancelled", "rejected"} for state in miner_states
+        ):
+            return
+        if time.monotonic() >= deadline:
+            raise ScenarioError(
+                f"Timed out waiting for mining: states={miner_states}, heights={heights}."
+            )
+        time.sleep(0.02)
+
+
 def run_steps(
     steps: Any,
     actors: list[Actor],
@@ -606,6 +679,34 @@ def run_steps(
                 expected_pongs, actors, output_queue, display, timeout_seconds
             )
             display.controller("All PONG responses received")
+        elif step.get("command") == "start_mining":
+            selected = actor_selection(step.get("actors"), actors)
+            if any("miner" not in actor.roles for actor in selected):
+                raise ScenarioError("start_mining may target only miners.")
+            display.controller("Starting mining race")
+            with ThreadPoolExecutor(max_workers=len(selected)) as executor:
+                futures = [
+                    executor.submit(
+                        control_request,
+                        actor,
+                        request_id + index,
+                        "start_mining",
+                        timeout_seconds,
+                    )
+                    for index, actor in enumerate(selected)
+                ]
+                for future in futures:
+                    future.result()
+            request_id += len(selected)
+        elif step.get("wait") == "mining_complete":
+            height = step.get("height")
+            if not isinstance(height, int) or height < 1:
+                raise ScenarioError("mining_complete requires a positive height.")
+            display.controller(f"Waiting for block {height}")
+            wait_for_mining(
+                actors, output_queue, display, timeout_seconds, height
+            )
+            display.controller(f"Block {height} accepted; losing miners stopped")
         elif step.get("command") == "restart":
             name = step.get("actor")
             if not isinstance(name, str):
@@ -712,6 +813,33 @@ def run_assertions(assertions: Any, dumps: dict[str, Any], actors: list[Actor]) 
                 raise ScenarioError(
                     f"Assertion failed: {actor.name} has {actual} peers, "
                     f"expected {expected['value']}."
+                )
+        elif "mining_outcome" in assertion:
+            expected = assertion["mining_outcome"]
+            selected = actor_selection(expected.get("actors"), actors)
+            states = [dumps[actor.name]["mining"]["state"] for actor in selected]
+            if states.count("accepted") != 1 or states.count("cancelled") != len(states) - 1:
+                raise ScenarioError(f"Unexpected mining outcome: {states}.")
+        elif "winner_reward" in assertion:
+            expected = assertion["winner_reward"]
+            miners = actor_selection(expected.get("miners"), actors)
+            full_node = actor_selection([expected.get("full_node")], actors)[0]
+            amount = expected.get("amount")
+            winners = [
+                actor for actor in miners
+                if dumps[actor.name]["mining"]["state"] == "accepted"
+            ]
+            if len(winners) != 1 or not isinstance(amount, int):
+                raise ScenarioError("winner_reward has an invalid winner or amount.")
+            winner_address = dumps[winners[0].name]["wallet_address"]
+            balances = {
+                account["address"]: account["balance"]
+                for account in dumps[full_node.name]["chain"]["accounts"]
+            }
+            if balances.get(winner_address) != amount:
+                raise ScenarioError(
+                    f"Winner {winners[0].name} has balance "
+                    f"{balances.get(winner_address)}, expected {amount}."
                 )
         else:
             raise ScenarioError(f"Unsupported scenario assertion: {assertion}")

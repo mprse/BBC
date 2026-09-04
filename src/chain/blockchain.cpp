@@ -7,7 +7,8 @@
 
 namespace bbc::chain {
 
-Blockchain::Blockchain() : blocks_{genesis_block()} {}
+Blockchain::Blockchain(const std::uint32_t chain_id)
+    : blocks_{genesis_block(chain_id)} {}
 
 const Block& Blockchain::tip() const noexcept {
     return blocks_.back();
@@ -28,6 +29,9 @@ const ChainState& Blockchain::state() const noexcept {
 AppendResult Blockchain::append(Block block) {
     if (block.is_genesis()) {
         return {ChainError::genesis_cannot_be_appended};
+    }
+    if (block.chain_id() != tip().chain_id()) {
+        return {ChainError::unexpected_chain};
     }
     if (tip().height() == std::numeric_limits<std::uint64_t>::max()) {
         return {ChainError::height_overflow};
@@ -67,6 +71,8 @@ std::string_view chain_error_message(const ChainError error) noexcept {
             return "no error";
         case ChainError::genesis_cannot_be_appended:
             return "Genesis cannot be appended after the canonical chain origin";
+        case ChainError::unexpected_chain:
+            return "block belongs to a different chain";
         case ChainError::height_overflow:
             return "chain height is exhausted";
         case ChainError::unexpected_height:

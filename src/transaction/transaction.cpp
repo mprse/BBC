@@ -1,5 +1,6 @@
 #include "bbc/transaction/transaction.hpp"
 
+#include "bbc/core/network.hpp"
 #include "bbc/crypto/hash.hpp"
 #include "bbc/crypto/keys.hpp"
 #include "bbc/wallet/wallet.hpp"
@@ -49,7 +50,7 @@ std::uint64_t read_u64_le(const crypto::ByteView input, const std::size_t offset
 }
 
 TransactionError validate_fields(const TransactionFields& fields) noexcept {
-    if (fields.chain_id != current_chain_id) {
+    if (core::network_parameters_for_chain(fields.chain_id) == nullptr) {
         return TransactionError::unsupported_chain;
     }
     if (fields.amount == 0) {
@@ -225,7 +226,7 @@ TransactionResult deserialize_transaction(const crypto::ByteView encoded) {
 
     const std::uint32_t chain_id = read_u32_le(encoded, offset);
     offset += sizeof(std::uint32_t);
-    if (chain_id != current_chain_id) {
+    if (core::network_parameters_for_chain(chain_id) == nullptr) {
         return TransactionResult{TransactionError::unsupported_chain};
     }
 

@@ -1,14 +1,15 @@
 # BBC P2P Protocol Version 1
 
 - Status: Accepted
-- Scope: Stage 7.1
+- Scope: Stage 7.1 through Stage 7.3
 
 ## 1. Purpose
 
 This document defines the first binary peer-to-peer transport used between BBC
 full nodes. It covers TCP framing, connection establishment, version and network
 checks, liveness messages, resource limits, and disconnect behavior. Transaction,
-block, mining, and synchronization payloads are intentionally outside Stage 7.1.
+Transaction and synchronization payloads remain outside the implemented scope.
+Stage 7.3 mining payloads are specified in `mining-protocol-v1.md`.
 
 The protocol is public and unauthenticated. A valid frame checksum detects
 accidental corruption but does not prove who sent a message. Every transaction,
@@ -31,7 +32,7 @@ Every frame begins with this fixed 44-byte header:
 
 | Offset | Size | Field | Version 1 value or meaning |
 | ---: | ---: | --- | --- |
-| 0 | 4 | network magic | `42 42 43 01` |
+| 0 | 4 | network magic | Profile-specific; see below |
 | 4 | 2 | wire version | `1` |
 | 6 | 2 | message type | See Section 4 |
 | 8 | 4 | payload length | Number of bytes following the header |
@@ -42,8 +43,8 @@ SHA-256 digest of the empty byte sequence. The checksum is transmitted in the
 same raw 32-byte order returned by the BBC SHA-256 primitive; it is not a hex
 string.
 
-The current development network uses magic `42 42 43 01`. Any future regtest or
-public network must receive a different approved magic value. A receiver closes
+The development network uses magic `42 42 43 01`; regtest uses
+`42 42 43 02`. Their other parameters are fixed in `network-profiles.md`. A receiver closes
 the connection when the magic or wire version is not supported; version 1 does
 not attempt to reinterpret such a frame.
 
@@ -54,6 +55,11 @@ not attempt to reinterpret such a frame.
 | 1 | `HELLO` | 104 bytes | Yes, and it must be first |
 | 2 | `PING` | 8 bytes | No |
 | 3 | `PONG` | 8 bytes | No |
+| 10 | `TEMPLATE_REQUEST` | 40 bytes | No |
+| 11 | `BLOCK_TEMPLATE` | 173..161173 bytes | No |
+| 12 | `BLOCK_SUBMIT` | 165..161165 bytes | No |
+| 13 | `BLOCK` | 165..161165 bytes | No |
+| 14 | `BLOCK_RESULT` | 35 bytes | No |
 
 Message type zero is invalid. Unknown message types cause a disconnect in wire
 version 1. A known message with the wrong payload length also causes a
@@ -85,8 +91,9 @@ Service bits are:
 - bit 1: mining service;
 - bits 2 through 63: reserved and sent as zero.
 
-At least the full-node bit must be present in Stage 7.1. The wallet role is not a
-network service and is not advertised.
+At least one known service bit must be present. The wallet role is not a network
+service and is not advertised. A mining-only actor uses an outbound connection
+and does not expose a listener.
 
 The connection is rejected when the chain ID or Genesis Block ID differs from
 the local network. Equal session nonces indicate a self-connection and are also

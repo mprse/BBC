@@ -75,7 +75,7 @@ public:
 private:
     friend BlockResult create_block(BlockFields fields);
     friend BlockResult deserialize_block(crypto::ByteView encoded);
-    friend Block genesis_block();
+    friend Block genesis_block(std::uint32_t chain_id);
 
     Block(
         std::uint32_t chain_id,
@@ -121,7 +121,7 @@ private:
 
 [[nodiscard]] BlockResult create_block(BlockFields fields);
 [[nodiscard]] BlockResult deserialize_block(crypto::ByteView encoded);
-[[nodiscard]] Block genesis_block();
+[[nodiscard]] Block genesis_block(std::uint32_t chain_id = core::chain_id);
 
 [[nodiscard]] BlockError save_block(
     const Block& block,

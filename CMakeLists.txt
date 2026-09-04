@@ -39,6 +39,7 @@ add_library(
     src/chain/state.cpp
     src/consensus/proof_of_work.cpp
     src/core/version.cpp
+    src/core/network.cpp
     src/crypto/hash.cpp
     src/crypto/keys.cpp
     src/crypto/secure_memory.cpp
@@ -112,4 +113,15 @@ if(BUILD_TESTING)
             --no-ui
     )
     set_tests_properties(BBC.local-network-scenario-smoke PROPERTIES TIMEOUT 30)
+
+    add_test(
+        NAME BBC.local-mining-race-regtest
+        COMMAND
+            "${Python3_EXECUTABLE}"
+            "${CMAKE_SOURCE_DIR}/tools/scenario.py"
+            "${CMAKE_SOURCE_DIR}/scenarios/mining-race-regtest.json"
+            --executable "$<TARGET_FILE:bbc>"
+            --no-ui
+    )
+    set_tests_properties(BBC.local-mining-race-regtest PROPERTIES TIMEOUT 30)
 endif()

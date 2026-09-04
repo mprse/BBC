@@ -398,6 +398,25 @@ and disconnect behavior are documented in
 [`docs/adr/0009-p2p-framing-and-handshake.md`](docs/adr/0009-p2p-framing-and-handshake.md).
 Transaction and block propagation are not part of Stage 7.1.
 
+## Stage 7.3: First network mining race
+
+Run the fast automated profile:
+
+```console
+python tools/scenario.py scenarios/mining-race-regtest.json --no-ui
+```
+
+Run the deliberately slower visible development race:
+
+```console
+python tools/scenario.py scenarios/mining-race-development.json
+```
+
+Both scenarios start one full node and two wallet miners. The first valid
+height-1 block is persisted and rewarded; the competing miner stops with
+`stale_parent`. Network parameters and wire payloads are defined in
+`docs/network-profiles.md` and `docs/mining-protocol-v1.md`.
+
 ## Visual Studio Code
 
 Open the repository in Visual Studio Code, then:

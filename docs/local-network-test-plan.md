@@ -405,13 +405,18 @@ or final dumps.
 - transaction-ID deduplication and loop-free relay;
 - wait and rejection assertions.
 
-### Stage 7.3: Block propagation and mining workers
+### Stage 7.3: Block propagation and mining workers (first slice implemented)
 
 - block-template request and response;
 - bounded/cancellable mining work;
 - solved-block submission;
 - full-node validation, persistence, mempool revalidation, and relay;
 - deterministic regtest flow from Genesis through a confirmed payment.
+
+The implemented first slice covers empty height-1 templates, two outbound-only
+wallet miners, one authoritative full node, real batched Proof of Work, block
+submission, persistence, relay, and stale-work cancellation. Transaction-backed
+templates and the confirmed-payment flow remain follow-up work.
 
 ### Stage 7.4: Initial synchronization
 
@@ -428,10 +433,9 @@ partition controls, healing, and eligible transaction reinsertion.
 
 The following choices remain deliberately open:
 
-1. Regtest network identity, Genesis constants, and Proof-of-Work target.
-2. How public deterministic wallet fixtures are generated and loaded.
+1. How public deterministic wallet fixtures are generated and loaded.
 
-Resolved Stage 7.0 and 7.1 choices are recorded in ADRs 0008 and 0009. The
+Resolved choices are recorded in ADRs 0008 through 0010. The
 remaining choices should be resolved in small ADRs. The scenario runner should be
 Python because Python is already the cross-platform developer entry point and
 is well suited to subprocess orchestration. Consensus, P2P validation, wallet

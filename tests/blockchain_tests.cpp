@@ -132,6 +132,26 @@ TEST_CASE("a new blockchain contains only canonical Genesis", "[chain]") {
     CHECK(blockchain.state().account_count() == 0);
 }
 
+TEST_CASE("a blockchain rejects blocks from another network", "[chain]") {
+    bbc::chain::Blockchain development{1};
+    bbc::chain::BlockResult regtest = bbc::chain::create_block({
+        1,
+        bbc::chain::genesis_block(2).id(),
+        address_with_first_byte(0x44),
+        1,
+        bbc::consensus::fixed_difficulty_target(2),
+        0,
+        {},
+        2,
+    });
+    REQUIRE(regtest.has_value());
+    CHECK(
+        development.append(std::move(regtest).value()).error ==
+        bbc::chain::ChainError::unexpected_chain
+    );
+    CHECK(development.block_count() == 1);
+}
+
 TEST_CASE("appending a mined reward-only block creates miner funds", "[chain][state]") {
     bbc::chain::Blockchain blockchain;
     const bbc::chain::Block block = known_mined_block_one();

@@ -48,6 +48,7 @@ TEST_CASE("node configuration loads actor roles and loopback control", "[node]")
             "name": "node-a",
             "roles": ["wallet", "full_node"],
             "data_directory": "node-a-data",
+            "network": "development",
             "p2p": {
                 "host": "127.0.0.1",
                 "port": 0
@@ -80,6 +81,7 @@ TEST_CASE("full-node configuration requires a loopback P2P endpoint", "[node]") 
             "name": "node-a",
             "roles": ["full_node"],
             "data_directory": "node-a-data",
+            "network": "development",
             "p2p": {"host": "0.0.0.0", "port": 19001},
             "control": {
                 "host": "127.0.0.1",
@@ -104,6 +106,7 @@ TEST_CASE("node configuration rejects non-loopback control endpoints", "[node]")
             "name": "node-a",
             "roles": ["wallet"],
             "data_directory": "node-a-data",
+            "network": "development",
             "control": {
                 "host": "0.0.0.0",
                 "port": 20001,

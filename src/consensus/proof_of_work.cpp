@@ -1,6 +1,7 @@
 #include "bbc/consensus/proof_of_work.hpp"
 
 #include "bbc/crypto/hash.hpp"
+#include "bbc/core/network.hpp"
 
 #include <algorithm>
 #include <cstddef>
@@ -10,17 +11,6 @@
 
 namespace bbc::consensus {
 namespace {
-
-constexpr crypto::Hash256 make_fixed_target() {
-    crypto::Hash256 target{};
-    target.fill(0xFFU);
-    target[0] = 0;
-    target[1] = 0;
-    target[2] = 0;
-    return target;
-}
-
-constexpr crypto::Hash256 network_target = make_fixed_target();
 
 void write_mining_nonce(
     crypto::Bytes& header,
@@ -73,8 +63,12 @@ std::optional<std::uint64_t> MiningResult::next_nonce() const noexcept {
     return next_nonce_;
 }
 
-const crypto::Hash256& fixed_difficulty_target() noexcept {
-    return network_target;
+const crypto::Hash256& fixed_difficulty_target(const std::uint32_t chain_id) noexcept {
+    const core::NetworkParameters* network =
+        core::network_parameters_for_chain(chain_id);
+    return network == nullptr
+        ? core::network_parameters(core::NetworkProfile::development).difficulty_target
+        : network->difficulty_target;
 }
 
 bool hash_meets_target(
@@ -93,6 +87,7 @@ ProofOfWorkError validate_proof_of_work(const chain::Block& block) {
     if (block.is_genesis()) {
         return ProofOfWorkError::none;
     }
+    const crypto::Hash256& network_target = fixed_difficulty_target(block.chain_id());
     if (block.difficulty_target() != network_target) {
         return ProofOfWorkError::unexpected_target;
     }
@@ -109,6 +104,7 @@ MiningResult mine_block(
     if (candidate.is_genesis()) {
         return MiningResult{ProofOfWorkError::genesis_not_mineable, 0};
     }
+    const crypto::Hash256& network_target = fixed_difficulty_target(candidate.chain_id());
     if (candidate.difficulty_target() != network_target) {
         return MiningResult{ProofOfWorkError::unexpected_target, 0};
     }

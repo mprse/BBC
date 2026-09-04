@@ -197,7 +197,7 @@ TEST_CASE("transaction decoder rejects invalid protocol fields", "[transaction]"
     );
 
     bbc::crypto::Bytes unsupported_chain = valid;
-    unsupported_chain[5] = 2;
+    unsupported_chain[5] = 3;
     CHECK(
         bbc::transaction::deserialize_transaction(unsupported_chain).error() ==
         bbc::transaction::TransactionError::unsupported_chain

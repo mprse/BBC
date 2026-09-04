@@ -307,7 +307,7 @@ TEST_CASE("block decoder rejects modified and malformed data", "[block]") {
     );
 
     bbc::crypto::Bytes unsupported_chain = valid;
-    unsupported_chain[5] = 2;
+    unsupported_chain[5] = 3;
     CHECK(
         bbc::chain::deserialize_block(unsupported_chain).error() ==
         bbc::chain::BlockError::unsupported_chain

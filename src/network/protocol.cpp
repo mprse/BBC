@@ -1,6 +1,8 @@
 #include "bbc/network/protocol.hpp"
 
 #include "bbc/crypto/hash.hpp"
+#include "bbc/core/network.hpp"
+#include "bbc/chain/block.hpp"
 
 #include <algorithm>
 #include <array>
@@ -11,8 +13,6 @@
 
 namespace bbc::network {
 namespace {
-
-constexpr std::array<crypto::Byte, 4> network_magic{'B', 'B', 'C', 1};
 
 template <typename Range>
 void append(crypto::Bytes& output, const Range& range) {
@@ -75,13 +75,40 @@ std::optional<MessageType> decode_message_type(const std::uint16_t value) {
             return MessageType::ping;
         case static_cast<std::uint16_t>(MessageType::pong):
             return MessageType::pong;
+        case static_cast<std::uint16_t>(MessageType::template_request):
+            return MessageType::template_request;
+        case static_cast<std::uint16_t>(MessageType::block_template):
+            return MessageType::block_template;
+        case static_cast<std::uint16_t>(MessageType::block_submit):
+            return MessageType::block_submit;
+        case static_cast<std::uint16_t>(MessageType::block):
+            return MessageType::block;
+        case static_cast<std::uint16_t>(MessageType::block_result):
+            return MessageType::block_result;
         default:
             return std::nullopt;
     }
 }
 
-std::size_t expected_payload_size(const MessageType type) {
-    return type == MessageType::hello ? hello_payload_size : ping_payload_size;
+bool valid_payload_size(const MessageType type, const std::size_t size) {
+    switch (type) {
+        case MessageType::hello:
+            return size == hello_payload_size;
+        case MessageType::ping:
+        case MessageType::pong:
+            return size == ping_payload_size;
+        case MessageType::template_request:
+            return size == sizeof(std::uint64_t) + crypto::hash256_size;
+        case MessageType::block_template:
+            return size >= sizeof(std::uint64_t) + chain::block_header_size &&
+                size <= sizeof(std::uint64_t) + chain::maximum_block_size;
+        case MessageType::block_submit:
+        case MessageType::block:
+            return size >= chain::block_header_size && size <= chain::maximum_block_size;
+        case MessageType::block_result:
+            return size == crypto::hash256_size + 3;
+    }
+    return false;
 }
 
 }  // namespace
@@ -124,15 +151,19 @@ ProtocolError HelloPayloadResult::error() const noexcept {
 
 crypto::Bytes serialize_frame(
     const MessageType type,
-    const crypto::ByteView payload
+    const crypto::ByteView payload,
+    const std::uint32_t chain_id
 ) {
+    const core::NetworkParameters* network =
+        core::network_parameters_for_chain(chain_id);
     if (payload.size() > maximum_frame_payload_size ||
-        payload.size() > std::numeric_limits<std::uint32_t>::max()) {
+        payload.size() > std::numeric_limits<std::uint32_t>::max() ||
+        network == nullptr || !valid_payload_size(type, payload.size())) {
         return {};
     }
     crypto::Bytes encoded;
     encoded.reserve(frame_header_size + payload.size());
-    append(encoded, network_magic);
+    append(encoded, network->p2p_magic);
     append_u16_le(encoded, wire_version);
     append_u16_le(encoded, static_cast<std::uint16_t>(type));
     append_u32_le(encoded, static_cast<std::uint32_t>(payload.size()));
@@ -141,11 +172,17 @@ crypto::Bytes serialize_frame(
     return encoded;
 }
 
-FrameHeaderResult deserialize_frame_header(const crypto::ByteView encoded) {
+FrameHeaderResult deserialize_frame_header(
+    const crypto::ByteView encoded,
+    const std::uint32_t chain_id
+) {
     if (encoded.size() != frame_header_size) {
         return FrameHeaderResult{ProtocolError::invalid_header_size};
     }
-    if (!std::ranges::equal(network_magic, encoded.first(network_magic.size()))) {
+    const core::NetworkParameters* network =
+        core::network_parameters_for_chain(chain_id);
+    if (network == nullptr ||
+        !std::ranges::equal(network->p2p_magic, encoded.first(network->p2p_magic.size()))) {
         return FrameHeaderResult{ProtocolError::invalid_magic};
     }
     if (read_u16_le(encoded, 4) != wire_version) {
@@ -159,7 +196,7 @@ FrameHeaderResult deserialize_frame_header(const crypto::ByteView encoded) {
     if (payload_length > maximum_frame_payload_size) {
         return FrameHeaderResult{ProtocolError::oversized_payload};
     }
-    if (payload_length != expected_payload_size(*type)) {
+    if (!valid_payload_size(*type, payload_length)) {
         return FrameHeaderResult{ProtocolError::invalid_payload_size};
     }
     return FrameHeaderResult{FrameHeader{

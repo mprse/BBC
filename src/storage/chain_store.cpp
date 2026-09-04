@@ -208,7 +208,8 @@ ChainStore::ChainStore(
       records_(std::move(records)) {}
 
 ChainStoreResult ChainStore::initialize(
-    const std::filesystem::path& data_directory
+    const std::filesystem::path& data_directory,
+    const std::uint32_t chain_id
 ) {
     const std::filesystem::path chain_directory = data_directory / "chain";
     const std::filesystem::path blocks_file = chain_directory / "blocks.dat";
@@ -230,7 +231,7 @@ ChainStoreResult ChainStore::initialize(
         return ChainStoreResult{ChainStoreError::io_error};
     }
 
-    const crypto::Bytes genesis_record = encode_record(chain::genesis_block());
+    const crypto::Bytes genesis_record = encode_record(chain::genesis_block(chain_id));
     std::ofstream output(blocks_file, std::ios::binary | std::ios::trunc);
     if (!output) {
         return ChainStoreResult{ChainStoreError::io_error};
@@ -247,7 +248,7 @@ ChainStoreResult ChainStore::initialize(
     }
     output.close();
 
-    ChainStoreResult initialized = open(data_directory);
+    ChainStoreResult initialized = open(data_directory, chain_id);
     if (!initialized.has_value()) {
         std::filesystem::remove(database_file, error);
         std::filesystem::remove(blocks_file, error);
@@ -255,7 +256,10 @@ ChainStoreResult ChainStore::initialize(
     return initialized;
 }
 
-ChainStoreResult ChainStore::open(const std::filesystem::path& data_directory) {
+ChainStoreResult ChainStore::open(
+    const std::filesystem::path& data_directory,
+    const std::uint32_t chain_id
+) {
     const std::filesystem::path blocks_file = data_directory / "chain" / "blocks.dat";
     std::error_code file_error;
     if (!std::filesystem::is_regular_file(blocks_file, file_error)) {
@@ -277,7 +281,7 @@ ChainStoreResult ChainStore::open(const std::filesystem::path& data_directory) {
         return ChainStoreResult{ChainStoreError::io_error};
     }
 
-    chain::Blockchain blockchain;
+    chain::Blockchain blockchain{chain_id};
     std::vector<std::pair<std::uint64_t, std::uint64_t>> records;
     std::uint64_t offset = 0;
     while (offset < file_size) {
@@ -322,7 +326,7 @@ ChainStoreResult ChainStore::open(const std::filesystem::path& data_directory) {
         }
         if (records.empty()) {
             if (!decoded.value().is_genesis() ||
-                decoded.value().id() != chain::genesis_block().id()) {
+                decoded.value().id() != chain::genesis_block(chain_id).id()) {
                 return ChainStoreResult{ChainStoreError::invalid_genesis_record};
             }
         } else {

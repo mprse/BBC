@@ -43,7 +43,9 @@ private:
     std::optional<std::uint64_t> next_nonce_;
 };
 
-[[nodiscard]] const crypto::Hash256& fixed_difficulty_target() noexcept;
+[[nodiscard]] const crypto::Hash256& fixed_difficulty_target(
+    std::uint32_t chain_id = 1
+) noexcept;
 
 [[nodiscard]] bool hash_meets_target(
     const crypto::Hash256& hash,

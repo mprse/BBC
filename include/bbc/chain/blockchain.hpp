@@ -13,6 +13,7 @@ namespace bbc::chain {
 enum class ChainError {
     none,
     genesis_cannot_be_appended,
+    unexpected_chain,
     height_overflow,
     unexpected_height,
     unexpected_parent,
@@ -33,7 +34,7 @@ struct AppendResult {
 
 class Blockchain final {
 public:
-    Blockchain();
+    explicit Blockchain(std::uint32_t chain_id = 1);
 
     [[nodiscard]] const Block& tip() const noexcept;
     [[nodiscard]] std::size_t block_count() const noexcept;

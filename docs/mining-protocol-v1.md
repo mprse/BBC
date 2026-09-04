@@ -1,0 +1,63 @@
+# BBC Mining Protocol Version 1
+
+- Status: Accepted
+- Scope: Stage 7.3 first vertical slice
+
+## 1. Topology and authority
+
+A mining worker advertises service bit 1 and makes an outbound connection to a
+full node. It does not expose a listener. The full node advertises service bit 0
+and is the only component in this slice that selects the active-chain tip,
+constructs templates, validates submitted blocks, persists the winner, and
+relays an accepted block. A wallet address in the template request determines
+the block reward recipient.
+
+## 2. Messages
+
+All integers are unsigned little-endian. Blocks use the canonical encoding in
+`block-format.md`. These messages are legal only after HELLO completes.
+
+| Type | Name | Payload |
+| ---: | --- | --- |
+| 10 | `TEMPLATE_REQUEST` | request ID (8) + reward address hash (32) |
+| 11 | `BLOCK_TEMPLATE` | request ID (8) + canonical block (165..161165) |
+| 12 | `BLOCK_SUBMIT` | canonical block (165..161165) |
+| 13 | `BLOCK` | canonical block (165..161165) |
+| 14 | `BLOCK_RESULT` | block ID (32) + accepted (1) + reason (2) |
+
+The first slice creates an empty height-1 block because transaction propagation
+is not implemented yet. Its parent is the full node's current tip, timestamp is
+parent timestamp plus one, mining nonce is zero, target comes from the selected
+network profile, and reward address comes from the request.
+
+`BLOCK_RESULT.accepted` is exactly 0 or 1. Reason codes are:
+
+| Code | Meaning |
+| ---: | --- |
+| 0 | accepted |
+| 1 | stale parent or height |
+| 2 | malformed block payload |
+| 3 | another consensus or storage rejection |
+
+A rejected solution does not disconnect the miner.
+
+## 3. Cancellable work
+
+The miner searches in batches of 10,000 nonces. Between batches it checks a
+cancellation flag. It emits progress at most once per second. Finding a valid
+hash emits `block_found` and `block_submitted` and sends `BLOCK_SUBMIT`.
+
+The full node atomically appends the first valid solution, replies with
+`BLOCK_RESULT`, and sends `BLOCK` to the other peers. A competing worker stops
+with reason `stale_parent` when it receives the accepted block. If it found and
+submitted a competing solution before processing that relay, the full node
+returns reason code 1 and the same cancellation outcome. Blocks are never
+merged.
+
+## 4. Scenarios
+
+`mining-race-regtest.json` is an automated test using real low-difficulty PoW.
+`mining-race-development.json` uses the normal development target and is the
+visible demonstration. Both start one full node and two wallet miners from their
+profile-specific Genesis Block, start both workers, require height 1, and require
+exactly one accepted miner and one cancelled miner.

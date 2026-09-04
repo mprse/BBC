@@ -86,6 +86,14 @@ NodeConfigResult load_node_config(const std::filesystem::path& path) {
         document["data_directory"].get_ref<const std::string&>().empty()) {
         return NodeConfigResult{NodeConfigError::invalid_data_directory};
     }
+    if (!document.contains("network") || !document["network"].is_string()) {
+        return NodeConfigResult{NodeConfigError::invalid_network_profile};
+    }
+    const std::optional<core::NetworkProfile> network_profile =
+        core::parse_network_profile(document["network"].get<std::string>());
+    if (!network_profile.has_value()) {
+        return NodeConfigResult{NodeConfigError::invalid_network_profile};
+    }
     std::uint64_t p2p_port = 0;
     const bool full_node = std::ranges::find(roles, ActorRole::full_node) != roles.end();
     if (full_node) {
@@ -130,6 +138,7 @@ NodeConfigResult load_node_config(const std::filesystem::path& path) {
         name,
         std::move(roles),
         std::filesystem::path{document["data_directory"].get<std::string>()},
+        *network_profile,
         static_cast<std::uint16_t>(p2p_port),
         static_cast<std::uint16_t>(port),
         token,
@@ -179,6 +188,8 @@ std::string_view node_config_error_message(const NodeConfigError error) noexcept
             return "node configuration has invalid actor roles";
         case NodeConfigError::invalid_data_directory:
             return "node configuration has an invalid data directory";
+        case NodeConfigError::invalid_network_profile:
+            return "node configuration has an invalid network profile";
         case NodeConfigError::invalid_p2p_endpoint:
             return "node configuration has an invalid P2P endpoint";
         case NodeConfigError::invalid_control_endpoint:

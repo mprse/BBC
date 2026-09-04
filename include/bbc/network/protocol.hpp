@@ -24,6 +24,11 @@ enum class MessageType : std::uint16_t {
     hello = 1,
     ping = 2,
     pong = 3,
+    template_request = 10,
+    block_template = 11,
+    block_submit = 12,
+    block = 13,
+    block_result = 14,
 };
 
 enum class ProtocolError {
@@ -83,10 +88,12 @@ private:
 
 [[nodiscard]] crypto::Bytes serialize_frame(
     MessageType type,
-    crypto::ByteView payload
+    crypto::ByteView payload,
+    std::uint32_t chain_id = 1
 );
 [[nodiscard]] FrameHeaderResult deserialize_frame_header(
-    crypto::ByteView encoded
+    crypto::ByteView encoded,
+    std::uint32_t chain_id = 1
 );
 [[nodiscard]] ProtocolError validate_frame_payload(
     const FrameHeader& header,
