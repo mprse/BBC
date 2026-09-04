@@ -70,6 +70,10 @@ wallet.dat
 /*.bbctx
 /*.bbcblock
 
+# Local full-node data directories
+/node-*/
+/nodes/
+
 # vcpkg
 vcpkg_installed/
 

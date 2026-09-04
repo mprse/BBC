@@ -37,6 +37,7 @@ public:
 
     [[nodiscard]] const Block& tip() const noexcept;
     [[nodiscard]] std::size_t block_count() const noexcept;
+    [[nodiscard]] const std::vector<Block>& blocks() const noexcept;
     [[nodiscard]] const ChainState& state() const noexcept;
 
     [[nodiscard]] AppendResult append(Block block);

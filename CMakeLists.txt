@@ -9,6 +9,7 @@ project(
 
 include(CTest)
 find_package(unofficial-sodium CONFIG REQUIRED)
+find_package(unofficial-sqlite3 CONFIG REQUIRED)
 
 function(bbc_enable_warnings target)
     if(MSVC)
@@ -38,6 +39,7 @@ add_library(
     src/crypto/keys.cpp
     src/crypto/secure_memory.cpp
     src/crypto/sodium_runtime.cpp
+    src/storage/chain_store.cpp
     src/transaction/transaction.cpp
     src/transaction/transaction_file.cpp
     src/wallet/address.cpp
@@ -48,6 +50,7 @@ target_include_directories(bbc_core PUBLIC include PRIVATE src)
 target_compile_features(bbc_core PUBLIC cxx_std_20)
 target_compile_definitions(bbc_core PRIVATE BBC_VERSION="${PROJECT_VERSION}")
 target_link_libraries(bbc_core PRIVATE unofficial-sodium::sodium)
+target_link_libraries(bbc_core PRIVATE unofficial::sqlite3::sqlite3)
 set_target_properties(bbc_core PROPERTIES CXX_EXTENSIONS OFF)
 bbc_enable_warnings(bbc_core)
 
@@ -66,6 +69,7 @@ if(BUILD_TESTING)
         tests/block_tests.cpp
         tests/blockchain_tests.cpp
         tests/proof_of_work_tests.cpp
+        tests/storage_tests.cpp
         tests/crypto_tests.cpp
         tests/transaction_tests.cpp
         tests/wallet_tests.cpp

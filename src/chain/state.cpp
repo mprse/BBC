@@ -14,6 +14,10 @@ std::size_t ChainState::account_count() const noexcept {
     return accounts_.size();
 }
 
+const ChainState::Accounts& ChainState::accounts() const noexcept {
+    return accounts_;
+}
+
 StateTransitionResult apply_block_state(ChainState& state, const Block& block) {
     if (block.is_genesis()) {
         return {StateTransitionError::genesis_has_no_transition, std::nullopt};

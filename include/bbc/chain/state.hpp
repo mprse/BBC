@@ -26,8 +26,11 @@ struct StateTransitionResult;
 
 class ChainState final {
 public:
+    using Accounts = std::map<crypto::Hash256, AccountState>;
+
     [[nodiscard]] AccountState account(const wallet::Address& address) const noexcept;
     [[nodiscard]] std::size_t account_count() const noexcept;
+    [[nodiscard]] const Accounts& accounts() const noexcept;
 
 private:
     friend struct StateTransitionResult;
@@ -36,7 +39,7 @@ private:
         const Block& block
     );
 
-    std::map<crypto::Hash256, AccountState> accounts_;
+    Accounts accounts_;
 };
 
 enum class StateTransitionError {

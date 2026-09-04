@@ -17,6 +17,10 @@ std::size_t Blockchain::block_count() const noexcept {
     return blocks_.size();
 }
 
+const std::vector<Block>& Blockchain::blocks() const noexcept {
+    return blocks_;
+}
+
 const ChainState& Blockchain::state() const noexcept {
     return state_;
 }

@@ -296,6 +296,34 @@ The exact replay and state-transition rules are specified in
 [`docs/chain-state.md`](docs/chain-state.md), and the decision is recorded in
 [`docs/adr/0005-linear-chain-and-account-state.md`](docs/adr/0005-linear-chain-and-account-state.md).
 
+## Stage 5.1: Persistent chain store
+
+Create a node data directory and import mined blocks once:
+
+```powershell
+.\build\windows-msvc-debug\bbc.exe chain init --data-dir node-a
+.\build\windows-msvc-debug\bbc.exe chain add --data-dir node-a --block block-1.bbcblock
+.\build\windows-msvc-debug\bbc.exe chain add --data-dir node-a --block block-2.bbcblock
+```
+
+Later queries read the stored chain directly:
+
+```powershell
+.\build\windows-msvc-debug\bbc.exe chain verify --data-dir node-a
+.\build\windows-msvc-debug\bbc.exe chain tip --data-dir node-a
+.\build\windows-msvc-debug\bbc.exe wallet balance --data-dir node-a
+```
+
+The authoritative append-only history is `node-a/chain/blocks.dat`. The derived
+SQLite index and account-state cache is `node-a/chain/chain.db`; deleting only
+that database is safe because it is rebuilt from fully validated block records
+on the next open.
+
+The format and recovery rules are specified in
+[`docs/chain-store.md`](docs/chain-store.md), and the storage decision is
+recorded in
+[`docs/adr/0006-append-only-chain-store.md`](docs/adr/0006-append-only-chain-store.md).
+
 ## Visual Studio Code
 
 Open the repository in Visual Studio Code, then:

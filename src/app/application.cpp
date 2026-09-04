@@ -70,7 +70,8 @@ void print_wallet_help(std::ostream& output) {
            << "  bbc wallet select --file <path>\n"
            << "  bbc wallet selected\n"
            << "  bbc wallet address [--file <path>]\n"
-           << "  bbc wallet balance [--file <path>] [--block <path>]...\n"
+           << "  bbc wallet balance [--file <path>] "
+              "[--block <path>]... [--data-dir <path>]\n"
            << "  bbc wallet sign [--file <path>] --message <text>\n"
            << "  bbc wallet verify --public-key <hex> --message <text> "
               "--signature <hex>\n";
@@ -281,7 +282,15 @@ int show_wallet_balance(
     std::ostream& output,
     std::ostream& error_output
 ) {
-    if (!validate_options(options, {"--file", "--block"}, error_output)) {
+    if (!validate_options(
+            options,
+            {"--file", "--block", "--data-dir"},
+            error_output
+        )) {
+        return usage_error;
+    }
+    if (has_option(options, "--block") && has_option(options, "--data-dir")) {
+        error_output << "Use either --data-dir or --block, not both.\n";
         return usage_error;
     }
     const std::optional<std::filesystem::path> file =
@@ -300,6 +309,13 @@ int show_wallet_balance(
     return detail::show_chain_balance(
         loaded_wallet->address(),
         detail::option_values(options, "--block"),
+        has_option(options, "--data-dir")
+            ? std::optional<std::filesystem::path>{std::filesystem::path{
+                  std::string{
+                      detail::option_values(options, "--data-dir").front()
+                  }
+              }}
+            : std::nullopt,
         output,
         error_output
     );
