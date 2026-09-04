@@ -4,6 +4,7 @@
 #include "bbc/chain/blockchain.hpp"
 #include "bbc/crypto/hash.hpp"
 #include "bbc/storage/chain_store.hpp"
+#include "bbc/storage/mempool_store.hpp"
 #include "bbc/wallet/address.hpp"
 
 #include <filesystem>
@@ -193,6 +194,20 @@ int add_block_to_store(
            << "Block ID: " << crypto::to_upper_hex(block_id) << '\n'
            << "Chain height: "
            << opened.value().blockchain().tip().height() << '\n';
+
+    storage::MempoolStoreResult mempool_store = storage::MempoolStore::open(
+        std::filesystem::path{std::string{*data_directory}},
+        opened.value().blockchain().state()
+    );
+    if (!mempool_store.has_value()) {
+        error_output << "Warning: block was added, but the mempool could not be "
+                        "revalidated: "
+                     << storage::mempool_store_error_message(mempool_store.error())
+                     << '\n';
+    } else {
+        output << "Pending transactions after revalidation: "
+               << mempool_store.value().mempool().size() << '\n';
+    }
     return success;
 }
 

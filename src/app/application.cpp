@@ -7,6 +7,7 @@
 #include "app/block_commands.hpp"
 #include "app/chain_commands.hpp"
 #include "app/command_options.hpp"
+#include "app/mempool_commands.hpp"
 #include "app/transaction_commands.hpp"
 #include "app/wallet_access.hpp"
 #include "app/wallet_selection.hpp"
@@ -88,6 +89,7 @@ void print_help(std::ostream& output) {
            << "  transaction  Create, inspect, or verify a signed transaction\n"
            << "  block        Create, mine, inspect, or verify a block\n"
            << "  chain        Verify blocks and inspect chain state\n"
+           << "  mempool      Store and inspect pending transactions\n"
            << "  wallet-demo  Generate a temporary wallet and verify a signature\n\n";
     print_wallet_help(output);
     output << '\n';
@@ -96,6 +98,8 @@ void print_help(std::ostream& output) {
     detail::print_block_help(output);
     output << '\n';
     detail::print_chain_help(output);
+    output << '\n';
+    detail::print_mempool_help(output);
 }
 
 bool read_password(
@@ -549,6 +553,14 @@ int run(
 
     if (arguments.front() == "chain") {
         return detail::run_chain_command(
+            arguments.subspan(1),
+            output,
+            error_output
+        );
+    }
+
+    if (arguments.front() == "mempool") {
+        return detail::run_mempool_command(
             arguments.subspan(1),
             output,
             error_output

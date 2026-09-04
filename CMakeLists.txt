@@ -25,6 +25,7 @@ add_library(
     src/app/block_commands.cpp
     src/app/chain_commands.cpp
     src/app/command_options.cpp
+    src/app/mempool_commands.cpp
     src/app/password_reader.cpp
     src/app/transaction_commands.cpp
     src/app/wallet_access.cpp
@@ -39,7 +40,9 @@ add_library(
     src/crypto/keys.cpp
     src/crypto/secure_memory.cpp
     src/crypto/sodium_runtime.cpp
+    src/mempool/mempool.cpp
     src/storage/chain_store.cpp
+    src/storage/mempool_store.cpp
     src/transaction/transaction.cpp
     src/transaction/transaction_file.cpp
     src/wallet/address.cpp
@@ -71,6 +74,7 @@ if(BUILD_TESTING)
         tests/proof_of_work_tests.cpp
         tests/storage_tests.cpp
         tests/crypto_tests.cpp
+        tests/mempool_tests.cpp
         tests/transaction_tests.cpp
         tests/wallet_tests.cpp
     )

@@ -12,7 +12,7 @@ Bi-Bi-Coin is an educational C++ project for learning how a blockchain works.
 - Python 3.9 or newer
 - vcpkg available on `PATH`
 
-The build uses the pinned vcpkg manifest to install libsodium and Catch2. If
+The build uses the pinned vcpkg manifest to install libsodium, SQLite, and Catch2. If
 `VCPKG_ROOT` is not already set, the build helper derives it from the `vcpkg`
 executable found on `PATH`.
 
@@ -146,8 +146,8 @@ Create and sign a transaction with the selected wallet:
     --out payment.bbctx
 ```
 
-`amount` and `fee` are unsigned integers expressed in BBC base units. The
-number of decimal places represented by one BBC has not been selected yet.
+`amount` and `fee` are unsigned integers expressed in BBC base units. One BBC
+equals 100,000,000 base units.
 `nonce` is the sender account nonce, not a mining nonce.
 
 The command asks for the selected wallet password, signs the canonical binary
@@ -323,6 +323,36 @@ The format and recovery rules are specified in
 [`docs/chain-store.md`](docs/chain-store.md), and the storage decision is
 recorded in
 [`docs/adr/0006-append-only-chain-store.md`](docs/adr/0006-append-only-chain-store.md).
+
+## Stage 6: Mempool
+
+Add a signed transaction to a node's local pending pool and inspect it:
+
+```powershell
+.\build\windows-msvc-debug\bbc.exe mempool add --data-dir node-a --transaction payment.bbctx
+.\build\windows-msvc-debug\bbc.exe mempool list --data-dir node-a
+.\build\windows-msvc-debug\bbc.exe mempool status --data-dir node-a
+```
+
+Create a mining candidate directly from the stored chain and mempool:
+
+```powershell
+.\build\windows-msvc-debug\bbc.exe block candidate --data-dir node-a --reward-to <BBC-address> --timestamp <unix-seconds> --out candidate.bbcblock
+.\build\windows-msvc-debug\bbc.exe block mine --file candidate.bbcblock --out mined.bbcblock
+.\build\windows-msvc-debug\bbc.exe chain add --data-dir node-a --block mined.bbcblock
+```
+
+The mempool accepts at most 10,000 transactions, requires consecutive pending
+nonces per sender, and reserves pending outgoing amounts plus fees against the
+confirmed balance. Candidate selection takes at most 1,000 transactions,
+prefers higher fees, and preserves each sender's nonce order. Adding a block to
+the chain revalidates the local queue and removes confirmed or invalid entries.
+
+The local cache is `node-a/mempool/mempool.db`. It is not consensus history and
+can be deleted to start with an empty queue. Exact policy and persistence rules
+are documented in [`docs/mempool.md`](docs/mempool.md), and the decision is
+recorded in
+[`docs/adr/0007-local-persistent-mempool.md`](docs/adr/0007-local-persistent-mempool.md).
 
 ## Visual Studio Code
 

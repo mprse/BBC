@@ -4,6 +4,8 @@
 #include "bbc/chain/block.hpp"
 #include "bbc/consensus/proof_of_work.hpp"
 #include "bbc/crypto/hash.hpp"
+#include "bbc/storage/chain_store.hpp"
+#include "bbc/storage/mempool_store.hpp"
 #include "bbc/transaction/transaction.hpp"
 #include "bbc/wallet/address.hpp"
 
@@ -205,6 +207,95 @@ int create_block_file(
     return success;
 }
 
+int create_block_candidate(
+    const CommandOptions& options,
+    std::ostream& output,
+    std::ostream& error_output
+) {
+    if (!validate_options(
+            options,
+            {"--data-dir", "--reward-to", "--timestamp", "--out"},
+            error_output
+        )) {
+        return usage_error;
+    }
+    const std::optional<std::string_view> encoded_data_directory =
+        required_option(options, "--data-dir", error_output);
+    const std::optional<std::string_view> encoded_reward_recipient =
+        required_option(options, "--reward-to", error_output);
+    const std::optional<std::uint64_t> timestamp =
+        required_uint64_option(options, "--timestamp", error_output);
+    const std::optional<std::string_view> output_file =
+        required_option(options, "--out", error_output);
+    if (!encoded_data_directory.has_value() ||
+        !encoded_reward_recipient.has_value() || !timestamp.has_value() ||
+        !output_file.has_value()) {
+        return usage_error;
+    }
+    const std::optional<wallet::Address> reward_recipient =
+        wallet::Address::parse(*encoded_reward_recipient);
+    if (!reward_recipient.has_value()) {
+        error_output << "Reward recipient must be a valid BBC address.\n";
+        return usage_error;
+    }
+
+    const std::filesystem::path data_directory{
+        std::string{*encoded_data_directory}
+    };
+    storage::ChainStoreResult chain_store =
+        storage::ChainStore::open(data_directory);
+    if (!chain_store.has_value()) {
+        error_output << "Could not open chain store: "
+                     << storage::chain_store_error_message(chain_store.error()) << '\n';
+        return runtime_error;
+    }
+    const chain::Block& tip = chain_store.value().blockchain().tip();
+    if (tip.height() == std::numeric_limits<std::uint64_t>::max()) {
+        error_output << "Could not create block candidate: chain height is exhausted.\n";
+        return runtime_error;
+    }
+    if (*timestamp <= tip.timestamp()) {
+        error_output << "Block timestamp must be greater than the chain tip timestamp.\n";
+        return usage_error;
+    }
+    storage::MempoolStoreResult mempool_store = storage::MempoolStore::open(
+        data_directory,
+        chain_store.value().blockchain().state()
+    );
+    if (!mempool_store.has_value()) {
+        error_output << "Could not open mempool: "
+                     << storage::mempool_store_error_message(mempool_store.error()) << '\n';
+        return runtime_error;
+    }
+
+    chain::BlockResult created = chain::create_block({
+        tip.height() + 1,
+        tip.id(),
+        *reward_recipient,
+        *timestamp,
+        consensus::fixed_difficulty_target(),
+        0,
+        mempool_store.value().mempool().select(
+            chain::maximum_transactions_per_block
+        ),
+    });
+    if (!created.has_value()) {
+        error_output << "Could not create block candidate: "
+                     << chain::block_error_message(created.error()) << '\n';
+        return runtime_error;
+    }
+    const std::filesystem::path block_path{std::string{*output_file}};
+    const chain::BlockError save_error = chain::save_block(created.value(), block_path);
+    if (save_error != chain::BlockError::none) {
+        error_output << "Could not save block candidate: "
+                     << chain::block_error_message(save_error) << '\n';
+        return runtime_error;
+    }
+    output << "Block candidate saved: " << block_path.string() << '\n';
+    print_block(created.value(), output);
+    return success;
+}
+
 int show_genesis(
     const CommandOptions& options,
     std::ostream& output,
@@ -379,6 +470,8 @@ void print_block_help(std::ostream& output) {
            << "  bbc block create --height <value> --previous <block-id> "
               "--reward-to <address> --timestamp <unix-seconds> [--target <hex>] "
               "[--nonce <value>] [--transaction <path>]... --out <path>\n"
+           << "  bbc block candidate --data-dir <path> --reward-to <address> "
+              "--timestamp <unix-seconds> --out <path>\n"
            << "  bbc block show --file <path>\n"
            << "  bbc block verify --file <path>\n"
            << "  bbc block mine --file <candidate> --out <path> "
@@ -410,6 +503,9 @@ int run_block_command(
     }
     if (command == "create") {
         return create_block_file(*options, output, error_output);
+    }
+    if (command == "candidate") {
+        return create_block_candidate(*options, output, error_output);
     }
     if (command == "show") {
         return show_block_file(*options, output, error_output);
