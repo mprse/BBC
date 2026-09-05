@@ -1,7 +1,6 @@
 # BBC Mining Protocol Version 1
 
 - Status: Accepted
-- Scope: Stage 7.3
 
 ## 1. Topology and authority
 
@@ -14,8 +13,9 @@ the block reward recipient.
 
 An outbound-only miner retains the height and ID of each accepted block it
 observes. This small validated-tip view lets it verify the parent and height of
-the next template without storing the full blockchain. It does not provide
-late-join synchronization; a miner that starts behind still needs Stage 7.4.
+the next template without storing the full blockchain. It does not store or
+synchronize complete chain history, so a standalone miner must connect to an
+up-to-date full node.
 
 ## 2. Messages
 

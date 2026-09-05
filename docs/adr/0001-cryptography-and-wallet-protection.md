@@ -1,11 +1,11 @@
-# ADR 0001: Stage 1 Cryptography and Wallet Protection
+# ADR 0001: Cryptography and Wallet Protection
 
 - Status: Accepted
 - Date: 2026-09-03
 
 ## Context
 
-Stage 1 requires portable key generation, address derivation, signing,
+BBC requires portable key generation, address derivation, signing,
 verification, and password-protected wallet storage. The project must not
 implement cryptographic primitives itself. A wallet file must not reveal its
 private key and must reject both an incorrect password and any undetected file
@@ -13,7 +13,7 @@ modification.
 
 ## Decision
 
-BBC uses libsodium for all Stage 1 cryptographic operations:
+BBC uses libsodium for its cryptographic operations:
 
 - Ed25519 generates key pairs and creates detached signatures.
 - SHA-256 hashes the 32-byte public key for the current educational address.
@@ -27,7 +27,7 @@ BBC uses libsodium for all Stage 1 cryptographic operations:
 
 The current address is the ASCII prefix `BBC_` followed by the uppercase
 hexadecimal SHA-256 digest of the raw public key. This format is accepted for
-the educational Stage 1 implementation but is not declared stable for a public
+the educational implementation but is not declared stable for a public
 network. It currently has no version field or human-entry checksum.
 
 The wallet password is never stored. A wallet file stores the salt, nonce, KDF
@@ -58,5 +58,5 @@ makes password guessing expensive. Both layers are required.
 - File authentication detects corruption or tampering but does not prevent
   deletion, rollback to an older valid wallet file, or compromise of a running
   process.
-- libsodium and Catch2 are pinned through the vcpkg baseline to make Stage 1
+- libsodium and Catch2 are pinned through the vcpkg baseline to make
   builds reproducible.

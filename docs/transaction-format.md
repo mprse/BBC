@@ -56,9 +56,9 @@ A version 1 decoder performs these checks without mutating account state:
    sender public key.
 
 Balance, the expected account nonce, fee policy, and duplicate transaction
-checks require blockchain state and are intentionally deferred to the state and
-mempool stages. Passing this format-level validation does not by itself mean a
-transaction can be applied to the current chain state.
+checks require blockchain state and are performed by the chain-state and
+mempool components. Passing this format-level validation does not by itself
+mean a transaction can be applied to the current chain state.
 
 ## File behavior
 
@@ -70,3 +70,15 @@ and invalid signatures.
 Transaction files contain public information only: addresses, amounts, nonce,
 public key, signature, and transaction ID. They never contain wallet passwords
 or private keys.
+
+## C++ API and integration
+
+`bbc::transaction` in `include/bbc/transaction/transaction.hpp` exposes
+`TransactionFields`, `sign_transaction()`, and the immutable
+`SignedTransaction` value. `serialize()` and `deserialize_transaction()` use the
+canonical bytes described above; `save_transaction()` and `load_transaction()`
+apply the same rules to `.bbctx` files. `TransactionResult` carries either a
+valid value or a specific `TransactionError` without changing chain state.
+
+The same `SignedTransaction` type is accepted by block construction, mempool
+admission, chain-state execution, CLI files, and P2P transaction messages.

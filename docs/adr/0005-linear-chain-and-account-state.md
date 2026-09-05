@@ -6,7 +6,7 @@ Accepted on 2026-09-04.
 
 ## Context
 
-Stage 5 must turn individually valid block files into an ordered blockchain and
+BBC must turn individually valid blocks into an ordered blockchain and
 derive balances from its history. The protocol also needs exact rules for
 monetary precision, account nonces, fees, block rewards, timestamps, and
 integer overflow before state transitions can be deterministic across nodes.
@@ -30,11 +30,11 @@ rules harder to test in isolation.
   subsidy and total fees are credited only after all transactions succeed.
 - A block must have height `parent.height + 1`, name the current tip as its
   parent, have a timestamp strictly greater than its parent, and pass the fixed
-  Stage 4 Proof of Work rule.
-- Consensus performs no local wall-clock check in Stage 5.
-- The first implementation holds one linear chain in memory and can rebuild it
-  by replaying ordered block files. Persistent storage, forks, cumulative work,
-  and reorganizations remain deferred.
+  fixed Proof-of-Work rule.
+- Consensus performs no local wall-clock check.
+- The initial state machine holds one linear chain in memory and can rebuild it
+  by replaying ordered block files. ADR 0006 adds persistence, and ADR 0014
+  extends the same state rules to forks and reorganizations.
 
 The complete validation and transition rules are specified in
 `docs/chain-state.md`.
@@ -50,5 +50,5 @@ The complete validation and transition rules are specified in
   nonce changes.
 - Replaying the same linear block history produces the same account state on
   every node.
-- Fork handling and crash-safe persistent storage require later protocol and
-  storage decisions.
+- Fork handling and crash-safe persistence are separate decisions recorded in
+  ADRs 0014 and 0006.

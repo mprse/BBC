@@ -44,7 +44,7 @@ output block is produced until a valid nonce is found.
 
 ## Deterministic vector
 
-The Stage 4 vector is a reward-only height-one block with:
+The deterministic test vector is a reward-only height-one block with:
 
 ```text
 previous block hash:
@@ -69,7 +69,7 @@ solution requires 7,707,264 attempts when every nonce is tested sequentially.
 
 ## Proof of Work verification boundary
 
-Stage 4 block verification checks:
+Proof-of-Work verification checks:
 
 - canonical block and transaction encoding,
 - transaction signatures and Merkle root,
@@ -79,4 +79,13 @@ Stage 4 block verification checks:
 Proof of Work verification alone does not prove that the parent is known or
 canonical, the height follows the parent, the timestamp is acceptable,
 transactions have sufficient balances and correct state nonces, or rewards are
-applied correctly. Those checks belong to the Stage 5 chain and state layer.
+applied correctly. Those checks belong to the chain and account-state layer
+described in `chain-state.md`.
+
+## C++ API
+
+`bbc::consensus` in `include/bbc/consensus/proof_of_work.hpp` exposes
+`fixed_difficulty_target()`, `hash_meets_target()`,
+`validate_proof_of_work()`, and `mine_block()`. `MiningResult` reports the mined
+block or a precise error, the number of attempts, and the next untested nonce
+when an attempt limit stops the search.

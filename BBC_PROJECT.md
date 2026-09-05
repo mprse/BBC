@@ -1,5 +1,9 @@
 # BBC — Bi-Bi-Coin, własna edukacyjna kryptowaluta
 
+> Ten plik jest pierwotnym dokumentem koncepcyjnym i historycznym planem prac.
+> Aktualny, przetestowany projekt, interfejsy i instrukcje opisuje angielska
+> dokumentacja w katalogu `docs/`, rozpoczynająca się od `docs/README.md`.
+
 ## 1. Cel projektu
 
 Celem projektu **BBC** jest stworzenie od podstaw prostej, działającej kryptowaluty i sieci blockchain w C++, przede wszystkim po to, aby praktycznie zrozumieć:
@@ -1673,4 +1677,3 @@ Consensus
 Najważniejsza intuicja całego projektu:
 
 > **Podpis kryptograficzny mówi, kto autoryzował transakcję. Full node mówi, czy transakcja jest zgodna z regułami. Proof of Work pomaga rozproszonej sieci uzgodnić jedną historię spośród konkurencyjnych poprawnych historii.**
-

@@ -1,7 +1,6 @@
 # BBC Transaction Propagation Protocol Version 1
 
 - Status: Accepted
-- Scope: Stage 7.2 first vertical slice
 
 ## 1. Purpose and roles
 
@@ -80,8 +79,8 @@ exposes mempool size, and normalized dumps also expose ordered transaction IDs.
 Structured events record submission, local acceptance or rejection, and relay;
 they never contain a private key or wallet password.
 
-The first slice permits one correlated in-flight transaction per wallet actor
-and requires an explicit account nonce. It does not implement fee-based peer
+The current protocol permits one correlated in-flight transaction per wallet
+actor and requires an explicit account nonce. It does not implement fee-based peer
 admission, retry after disconnect, transaction inventory announcements,
 automatic nonce lookup, or a public wallet RPC.
 

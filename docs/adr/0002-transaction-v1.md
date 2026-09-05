@@ -5,14 +5,13 @@
 
 ## Context
 
-Stage 2 needs a deterministic transaction representation that can be signed,
+BBC needs a deterministic transaction representation that can be signed,
 hashed, stored in a binary file, embedded in a future block, and transmitted by
 future P2P messages. Signing formatted text or JSON would introduce ambiguous
 encodings and platform-dependent behavior.
 
-The decimal precision of BBC, account state, fee policy, and mempool behavior
-have not been implemented yet. The Stage 2 format must preserve those future
-decisions without using floating-point values.
+The format must leave room for account state, fee policy, and mempool rules
+without using floating-point values.
 
 ## Decision
 

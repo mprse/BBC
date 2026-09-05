@@ -5,14 +5,13 @@
 
 ## Context
 
-Stage 7.3 can relay blocks created while a peer is connected, but a full node
+Block relay handles blocks created while a peer is connected, but a full node
 that starts later remains at Genesis. Copying another node's `blocks.dat` or
 SQLite cache would bypass peer framing, validation, and storage boundaries and
 would not represent real network synchronization.
 
-Stage 8 will add competing branches and reorganization. Stage 7.4 needs a small
-mechanism that is correct for the currently implemented single active chain
-without prematurely selecting a fork-choice design.
+The first synchronization design needed a small mechanism for downloading one
+active chain without transferring another node's storage files.
 
 ## Decision
 
@@ -35,7 +34,6 @@ Late full nodes can now converge deterministically and retain downloaded blocks
 across restart. Bounded batches remain below the existing frame limit and expose
 validation progress in the scenario console.
 
-The single-entry locator deliberately cannot resolve forks. A peer at the same
-height with another tip reports divergence and leaves local state unchanged.
-Branch discovery, cumulative-work selection, rollback, reorganization, and
-mempool reinsertion remain Stage 8 work.
+The original single-entry locator could not resolve forks. ADR 0015 replaces it
+with multi-entry locators; ADR 0014 defines cumulative-work fork choice,
+reorganization, and mempool reinsertion.

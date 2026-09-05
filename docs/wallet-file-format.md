@@ -64,3 +64,16 @@ salt, nonce, and public key are not secret. The format does not protect against
 file deletion, replacement with an older valid copy, observation of a password
 entered by an insecure caller, malware, memory inspection of a running process,
 or a weak password subjected to offline guessing.
+
+## C++ API and CLI integration
+
+`bbc::wallet::Wallet` in `include/bbc/wallet/wallet.hpp` creates a key pair,
+derives its address, signs bytes, and saves encrypted wallet data. `load_wallet()`
+authenticates and decrypts an existing file. `bbc::wallet::Address` in
+`include/bbc/wallet/address.hpp` provides public-key derivation, strict text
+parsing, and access to the underlying 32-byte hash.
+
+The `bbc wallet` CLI commands use these interfaces. Commands that need the
+private key read a password interactively with terminal echo disabled. The
+selected-wallet feature stores only a path to a wallet file, never its password
+or private key.

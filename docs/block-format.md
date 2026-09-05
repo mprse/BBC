@@ -6,7 +6,7 @@ This document defines the canonical binary encoding and format-level validation
 of BBC Block v1. All offsets are zero-based. Scalar integer fields are unsigned
 and little-endian. Hash and address fields are copied as raw 32-byte values. The
 difficulty target is the sole exception: it is encoded as a 32-byte big-endian
-unsigned integer for the numeric comparison introduced in Stage 4.
+unsigned integer for the Proof-of-Work comparison.
 
 ## Header
 
@@ -22,7 +22,7 @@ Every block begins with this exact 165-byte header:
 | 49 | 32 | transaction root | Merkle root defined below |
 | 81 | 32 | reward recipient | Raw BBC address hash; all zero only for Genesis |
 | 113 | 8 | timestamp | Unix time in seconds |
-| 121 | 32 | difficulty target | Big-endian 256-bit target; fixed by Stage 4 consensus |
+| 121 | 32 | difficulty target | Big-endian 256-bit target fixed by the network profile |
 | 153 | 8 | mining nonce | Proof of Work search value, distinct from account nonce |
 | 161 | 4 | transaction count | Number of following transactions, from `0` to `1000` |
 
@@ -123,7 +123,19 @@ An untrusted encoded block is validated in this order:
 7. For other heights, require a nonzero previous hash and reward-recipient hash.
 
 Passing these checks means only that the block has a valid canonical format.
-Stage 4 additionally requires the expected target and valid Proof of Work, as
-specified in `docs/proof-of-work.md`. Later stages will validate the parent
-relationship, height and timestamp relative to the parent, account state,
-transaction nonces and balances, fees, and reward state transitions.
+`proof-of-work.md` defines target and work validation. `chain-state.md` defines
+the parent relationship, height and timestamp rules, account nonces and
+balances, fees, rewards, fork choice, and reorganizations.
+
+## C++ API and integration
+
+`bbc::chain` in `include/bbc/chain/block.hpp` exposes `BlockFields`,
+`create_block()`, `genesis_block()`, and the immutable `Block` value.
+`serialize()` and `deserialize_block()` use the canonical bytes above;
+`save_block()` and `load_block()` apply them to `.bbcblock` files.
+`calculate_transaction_root()` is the one shared Merkle implementation.
+
+Mining creates a copy with `Block::with_mining_nonce()`. The chain layer accepts
+only blocks that also pass Proof-of-Work and state validation. Storage and P2P
+reuse the same serialized `Block`, so there is no separate network-only block
+representation.

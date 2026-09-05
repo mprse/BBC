@@ -1,7 +1,6 @@
 # BBC Block Synchronization Protocol Version 1
 
 - Status: Accepted
-- Scope: Stage 7.4 initial synchronization and Stage 8.2 fork-aware synchronization
 
 ## 1. Purpose
 

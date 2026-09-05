@@ -6,7 +6,7 @@ Accepted on 2026-09-03.
 
 ## Context
 
-Stage 4 needs a deterministic Proof of Work rule that is visible on one laptop
+BBC needs a deterministic Proof of Work rule that is visible on one laptop
 but remains inexpensive to verify. Block v1 already stores a 256-bit target and
 a 64-bit mining nonce in its canonical header.
 
@@ -55,4 +55,4 @@ the actual attempts, elapsed time, and hash rate for each successful run.
 - This low fixed difficulty is suitable only for an educational local network,
   not for protecting real value or an unrestricted public network.
 - Chain linkage, balances, account nonces, rewards, timestamps relative to a
-  parent, cumulative work, and fork choice remain for later stages.
+  parent, cumulative work, and fork choice are validated by the chain layer.

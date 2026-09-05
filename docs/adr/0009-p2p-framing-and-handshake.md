@@ -5,7 +5,7 @@
 
 ## Context
 
-Stage 7.1 introduces the first untrusted peer TCP connection. TCP does not
+The peer network introduces untrusted TCP connections. TCP does not
 preserve message boundaries, so BBC needs canonical framing, strict allocation
 limits, network separation, version negotiation, duplicate-connection handling,
 and a minimal liveness exchange before transaction or block relay is added.

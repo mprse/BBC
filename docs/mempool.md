@@ -1,11 +1,12 @@
 # BBC Mempool
 
-## Scope
+## Purpose and integration
 
-Stage 6 adds a local pool of valid, signed transactions that have not yet been
-included in the node's active chain. The mempool is node-local policy, not
-consensus state. Two correct nodes may temporarily contain different pending
-transactions.
+The mempool is a local pool of valid, signed transactions that have not yet
+been included in the node's active chain. The mempool is node policy, not
+consensus state, so two correct nodes may temporarily contain different pending
+transactions. Full nodes accept submissions, relay newly accepted transactions,
+and use this pool when constructing mining templates.
 
 ## Admission rules
 
@@ -55,8 +56,22 @@ successful `chain add` opens and revalidates the mempool after persisting the
 block. If mempool maintenance fails, the authoritative block remains accepted
 and the CLI emits a warning.
 
-Stage 6 supports one process writing a data directory at a time. Cross-process
-node locking and network transaction relay belong to later stages.
+One process may write a data directory at a time. Full nodes relay newly
+accepted transactions over P2P. After a chain reorganization, eligible
+transactions from detached blocks are restored before the existing pending
+queue and may be relayed again.
+
+## C++ API
+
+`bbc::mempool::Mempool` in `include/bbc/mempool/mempool.hpp` implements
+in-memory admission, revalidation, and candidate selection. The methods are
+`add()`, `revalidate()`, and `select()`.
+
+`bbc::storage::MempoolStore` in
+`include/bbc/storage/mempool_store.hpp` adds SQLite persistence. Its `open()`,
+`add()`, and `revalidate()` methods cover normal operation;
+`reconcile_reorganization()` rebuilds the queue after a branch switch and
+returns transactions that should be relayed.
 
 ## CLI workflow
 

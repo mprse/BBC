@@ -26,6 +26,6 @@ workers also need a clear authority for template creation and block acceptance.
 
 Automated tests finish quickly while the development demonstration remains
 visibly slow. The first winner receives the height-1 reward and the other miner
-stops. This is still a linear-chain prototype: fork storage, cumulative-work
-selection, reorganization, transaction propagation, and synchronization remain
-later stages.
+stops. Subsequent decisions add transaction propagation, synchronization, fork
+storage, cumulative-work selection, and reorganization without changing these
+network-profile constants.

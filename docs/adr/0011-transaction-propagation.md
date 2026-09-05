@@ -36,7 +36,7 @@ contents remain local and transient; consensus state changes only if a later
 valid block includes the payment. Duplicate relays consume validation work but
 do not circulate indefinitely.
 
-The first slice tracks one in-flight transaction per wallet and requires the
-scenario to supply its nonce. Rejection-specific scenarios, automatic nonce
-lookup, wallet-only network clients, inventory-based relay, and mining the
-payment into a height-2 block remain follow-up work.
+The protocol tracks one in-flight transaction per wallet and requires the
+scenario to supply its nonce. ADR 0012 adds confirmation in a height-2 block.
+Rejection-specific scenarios, automatic nonce lookup, wallet-only network
+clients, and inventory-based relay remain unsupported.

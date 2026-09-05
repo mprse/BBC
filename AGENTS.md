@@ -10,17 +10,11 @@ wallet, proof-of-work consensus, and peer-to-peer network operate. It is not a
 production cryptocurrency and must not be presented as suitable for storing real
 value.
 
-The first milestone is deliberately offline and deterministic:
-
-1. Create wallets.
-2. Create and sign a transaction.
-3. Validate the signature and transaction rules.
-4. Add the transaction to a block.
-5. Find and validate a simple proof of work.
-6. Apply the block to account state.
-
-Do not introduce P2P networking until the offline transaction, block, consensus,
-and state logic is covered by deterministic tests.
+The implemented system includes wallets, transactions, blocks, Proof of Work,
+account state, persistent full nodes, a mempool, peer communication, mining,
+synchronization, forks, and reorganizations. Preserve deterministic tests at
+every layer and keep public-network deployment separate from the loopback-only
+test-control interface.
 
 ## 2. Communication and language
 
@@ -115,7 +109,7 @@ environment changes.
 
 ## 7. Project structure
 
-The current structure is intentionally small:
+The repository is organized by responsibility:
 
 ```text
 .
@@ -131,6 +125,9 @@ The current structure is intentionally small:
 |   |-- consensus/
 |   |-- core/
 |   |-- crypto/
+|   |-- mempool/
+|   |-- network/
+|   |-- node/
 |   |-- storage/
 |   |-- transaction/
 |   |-- wallet/
@@ -220,7 +217,7 @@ interfaces over a single large executable target.
 - Once tests exist, a code change is not complete until the relevant build and
   test presets pass.
 
-For the current Stage 7 milestone, the minimum verification commands are:
+The minimum verification commands are:
 
 ```console
 python tools/build.py test
@@ -234,8 +231,22 @@ Also run `git diff --check` before handing off changes.
 ## 12. Documentation policy
 
 - Keep `README.md` focused on setup, build, test, and basic usage.
+- Maintain `docs/README.md` as the documentation index and
+  `docs/glossary.md` as the shared definition of abbreviations and domain terms.
 - Put protocol specifications and architectural explanations under `docs/` as
   they become implementation-ready.
+- Write reference documentation as a description of the current system: explain
+  what a component does, how it integrates, what API or protocol it exposes,
+  how errors are handled, and what is intentionally unsupported.
+- Do not require readers to know the project's implementation sequence. Avoid
+  milestone or stage numbers in reference documentation. Keep chronology in an
+  explicitly marked roadmap, history document, or the historical context of an
+  ADR only when it is necessary to explain a decision.
+- Write for readers without broad blockchain or systems-programming knowledge.
+  Define specialized terms in plain language and link to the glossary instead
+  of assuming unstated background knowledge.
+- Keep `docs/toolchain.md` current when prerequisites, dependencies, build
+  commands, presets, supported operating systems, or deployment targets change.
 - Record significant architectural or protocol choices as short English ADRs
   under `docs/adr/`.
 - Update documentation in the same change as user-visible commands, file layout,
@@ -249,7 +260,7 @@ Also run `git diff --check` before handing off changes.
 1. Read this file, `README.md`, and the relevant design documentation.
 2. Inspect the working tree before modifying files.
 3. Identify whether the task changes ordinary implementation or protocol rules.
-4. Make the smallest coherent change that advances the current milestone.
+4. Make the smallest coherent change that advances the current objective.
 5. Add or update tests and documentation with the implementation.
 6. Run the relevant build and tests, then run `git diff --check`.
 7. Review the final diff for secrets, generated files, accidental rewrites, and

@@ -1,15 +1,13 @@
-# Stage 7 Node Control and Scenario Runner
+# BBC Node Control and Scenario Runner
 
-## Scope
+## Purpose and boundaries
 
-Stage 7.0 introduced a long-running BBC actor process and a Python supervisor.
-Stage 7.1 adds a separate binary P2P listener for full-node actors, explicit
-scenario topology, handshake observation, ping checks, and reconnect tests.
-Stage 7.2 adds signed transaction submission and mempool convergence. Stage 7.3
-adds network profiles and scenario-controlled mining workers. Stage 7.4 adds
-staged actor startup, initial block synchronization, and restart-from-storage
-verification. Stage 8.2 adds controlled network partitions, fork-aware
-synchronization, and reorganization assertions.
+`bbc node run` is a long-running actor process used by the local integration
+test system. `tools/scenario.py` starts and supervises several such processes,
+connects their real P2P endpoints, drives wallets and miners through a separate
+loopback-only control endpoint, and verifies their final state. The control
+protocol is test infrastructure; it is not a public wallet API or part of
+consensus.
 
 ## Actor command
 
@@ -48,10 +46,10 @@ contain between 32 and 256 characters.
 
 The scenario wallet is ephemeral and exists only in actor memory. A full-node
 actor initializes profile-specific Genesis in its empty private data directory
-or validates and opens an existing store. Stage 7.3 adds outbound-only mining
-workers and the `start_mining` control action. A networked wallet can sign and
-submit one transaction through `submit_transaction`; persistent scenario
-wallets and automatic nonce lookup remain later increments. P2P behavior is defined in
+or validates and opens an existing store. Outbound-only mining workers use the
+`start_mining` control action. A networked wallet can sign and submit one
+transaction through `submit_transaction`; scenario wallets are currently
+ephemeral and the caller must provide the account nonce. P2P behavior is defined in
 [`p2p-protocol-v1.md`](p2p-protocol-v1.md) and
 [`mining-protocol-v1.md`](mining-protocol-v1.md), with transaction messages in
 [`transaction-protocol-v1.md`](transaction-protocol-v1.md) and synchronization

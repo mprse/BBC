@@ -1,11 +1,11 @@
-# ADR 0008: Stage 7 Networking Foundation
+# ADR 0008: Networking Foundation
 
 - Status: Accepted
 - Date: 2026-09-04
 
 ## Context
 
-Stage 7 needs cross-platform TCP, readable test configuration, multiple managed
+BBC needs cross-platform TCP, readable test configuration, multiple managed
 processes, and deterministic observation. Implementing P2P framing and process
 orchestration simultaneously would make failures difficult to localize.
 
@@ -18,8 +18,8 @@ orchestration simultaneously would make failures difficult to localize.
   cross-platform developer entry point.
 - Separate the P2P data plane from an opt-in loopback-only test-control plane.
 - Establish process supervision, isolated data directories, structured events,
-  control authentication, state dumps, assertions, and shutdown in Stage 7.0
-  before implementing P2P messages.
+  control authentication, state dumps, assertions, and shutdown before
+  implementing P2P messages.
 - Use operating-system-assigned control ports when a scenario specifies port
   zero, while still supporting explicit unique ports for visual scenarios.
 

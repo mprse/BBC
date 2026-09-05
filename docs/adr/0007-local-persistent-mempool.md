@@ -5,9 +5,9 @@
 
 ## Context
 
-Stage 5.1 stores and validates an active linear chain, but users still have to
-name transaction files manually while constructing each block. Stage 6 requires
-full-node behavior for accepting pending transactions, preventing local
+The chain store validates and persists blocks, but users would otherwise have
+to name transaction files manually while constructing each block. A full node
+also needs behavior for accepting pending transactions, preventing local
 overspending and nonce conflicts, selecting transactions for mining, and
 removing transactions after the chain advances.
 
@@ -35,5 +35,6 @@ removing transactions after the chain advances.
 - A high-fee transaction cannot bypass an earlier nonce from the same sender.
 - Restarting a node preserves its valid local pending queue, while deleting the
   mempool database only loses replaceable local data.
-- Replacement-by-fee, eviction under load, expiration, peer relay, reorg
-  reinsertion, and multi-process locking remain future work.
+- Peer relay and reorganization reinsertion build on this policy. Replacement
+  by fee, eviction under load, expiration, and multi-process locking remain
+  unsupported.

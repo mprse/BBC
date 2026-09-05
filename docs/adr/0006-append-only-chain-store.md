@@ -6,7 +6,7 @@ Accepted on 2026-09-04.
 
 ## Context
 
-Stage 5 can derive a valid linear chain from manually supplied block files, but
+BBC can derive a valid chain from manually supplied block files, but
 a full node needs a durable local history and must not require users to list
 every block for each query. The store must retain canonical block bytes, detect
 corruption and interrupted records, support indexed lookup, and rebuild account
@@ -31,8 +31,9 @@ node from independently replaying and verifying its history.
   runtime database failure rolls the block file back to its prior boundary.
 - A missing cache is recreated. Truncated or corrupt authoritative history is
   reported and not modified automatically.
-- Stage 5.1 permits one writer per data directory. Fork storage, multiple
-  writers, segmentation, pruning, and reorganization recovery are deferred.
+- One process may write a data directory. Valid side branches are stored and
+  replayed; multiple writers, segmentation, pruning, and orphan buffering are
+  not implemented.
 
 The exact local record layout and recovery behavior are specified in
 `docs/chain-store.md`.

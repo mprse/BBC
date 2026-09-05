@@ -1,21 +1,20 @@
 # BBC P2P Protocol Version 1
 
 - Status: Accepted
-- Scope: Stage 7.1 through Stage 7.4
 
 ## 1. Purpose
 
-This document defines the first binary peer-to-peer transport used between BBC
+This document defines the binary peer-to-peer transport used between BBC
 full nodes. It covers TCP framing, connection establishment, version and network
 checks, liveness messages, resource limits, and disconnect behavior.
 Transaction propagation is specified in `transaction-protocol-v1.md`, and
-Stage 7.3 mining payloads are specified in `mining-protocol-v1.md`.
+mining payloads are specified in `mining-protocol-v1.md`.
 Initial chain synchronization is specified in `sync-protocol-v1.md`.
 
 The protocol is public and unauthenticated. A valid frame checksum detects
 accidental corruption but does not prove who sent a message. Every transaction,
-block, and other consensus object added in later stages must still pass its
-normal cryptographic and consensus validation.
+block, and other consensus object must still pass its normal cryptographic and
+consensus validation.
 
 ## 2. Transport
 
@@ -87,7 +86,7 @@ established.
 | 40 | 32 | tip block ID | Current active-chain tip ID |
 | 72 | 32 | Genesis Block ID | Expected Genesis Block ID |
 
-Stage 7.1 nodes advertise minimum and maximum protocol version `1`. The selected
+Nodes advertise minimum and maximum protocol version `1`. The selected
 application protocol is the highest version contained in both inclusive ranges.
 The connection is rejected when the ranges do not overlap.
 
@@ -103,8 +102,8 @@ and does not expose a listener.
 
 The connection is rejected when the chain ID or Genesis Block ID differs from
 the local network. Equal session nonces indicate a self-connection and are also
-rejected. Stage 7.4 and Stage 8.2 full nodes use the tip fields to detect missing
-history and begin fork-aware synchronization as specified in
+rejected. Full nodes use the tip fields to detect missing history and begin
+fork-aware synchronization as specified in
 `sync-protocol-v1.md`; the advertisement itself never
 modifies local chain state. An already-connected mining worker advances its small validated-tip
 view only after receiving an accepted `BLOCK` or matching successful
@@ -123,7 +122,7 @@ after handshake completion responds with `PONG` containing the exact same
 nonce. `PONG` with no matching outstanding local ping is ignored and recorded
 as a protocol observation; it does not close the connection.
 
-Stage 7.1 uses these messages for explicit scenario checks and idle-peer
+The implementation uses these messages for explicit scenario checks and idle-peer
 liveness. They do not carry timestamps and must not affect consensus state.
 
 ## 7. Duplicate connections
@@ -142,7 +141,7 @@ healthy.
 
 ## 8. Resource and time limits
 
-Stage 7.1 uses these defensive defaults:
+The implementation uses these defensive defaults:
 
 | Resource | Limit |
 | --- | ---: |
@@ -164,7 +163,7 @@ These values are local denial-of-service policy, not consensus rules. They may
 be made configurable later, but tests use fixed values unless a negative test
 explicitly overrides a limit.
 
-## 9. Stage 7.1 topology and control behavior
+## 9. Topology and control behavior
 
 Only an actor with the `full_node` role exposes a P2P listener. It binds to the
 configured loopback host and may use port zero so the operating system selects

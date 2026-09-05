@@ -1,12 +1,12 @@
 # BBC Chain, Fork Choice, and Account State
 
-## Scope
+## Purpose and integration
 
-Stage 5 defines deterministic block validation and account-state transitions.
-Stage 8.1 extends that foundation with competing branches, cumulative-work fork
-choice, and reorganizations. A node starts from canonical Genesis, retains every
-fully validated block with a known parent, and exposes one selected active chain
-and its derived state.
+This component turns individually valid blocks into a blockchain and derives
+account balances from it. A node starts from the canonical Genesis Block,
+retains every fully validated block whose parent is known, and exposes one
+selected active chain and its derived account state. Persistent nodes wrap this
+component in `ChainStore`; synchronization and mining both read its active tip.
 
 ## Monetary units and block reward
 
@@ -48,15 +48,15 @@ pass:
 1. Its height is exactly the parent height plus one.
 2. Its `previous_block_hash` identifies a stored parent.
 3. Its timestamp is strictly greater than the parent timestamp.
-4. Its target and Proof of Work satisfy the Stage 4 rules.
+4. Its target and Proof of Work satisfy `proof-of-work.md`.
 5. Every transaction can be applied in its encoded block order.
 6. The subsidy and collected fees can be credited without integer overflow.
 
 Duplicate blocks and blocks with an unknown parent are rejected. Canonical
 decoding already checks the block and transaction formats,
 signatures, transaction root, chain ID, duplicate transaction IDs, and size
-limits before this chain-level validation runs. There is no wall-clock check in
-Stage 5 because consensus replay must not depend on the local clock.
+limits before this chain-level validation runs. There is no wall-clock check
+because consensus replay must not depend on the local clock.
 
 ## Transaction state transition
 
@@ -102,9 +102,19 @@ chain order before the previously pending queue, so nonce-dependent descendants
 can remain eligible. Normal mempool nonce, balance, duplicate, and capacity
 rules decide which transactions return.
 
+## C++ API
+
+`bbc::chain::Blockchain` in `include/bbc/chain/blockchain.hpp` is the in-memory
+API. `append(Block)` validates and stores a block. Its `AppendResult` reports
+whether the active chain changed, whether a reorganization occurred, and which
+blocks were detached or attached. Callers read `tip()`, `blocks()`, `state()`,
+`contains()`, `cumulative_work()`, and `block_locator()` without duplicating
+consensus logic. `stored_blocks()` includes valid side branches; `blocks()`
+contains only the active chain.
+
 ## Offline CLI replay
 
-Stage 5 exposes deterministic replay without defining durable node storage:
+The CLI can replay block files directly without creating durable node storage:
 
 ```text
 bbc chain verify [--block <path>]...

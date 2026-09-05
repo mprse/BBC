@@ -1,12 +1,13 @@
 # BBC Chain Store Version 2
 
-## Scope
+## Purpose and integration
 
-Stage 5.1 defines local durable block storage, and Stage 8.1 extends it to retain
-validated side branches and reproduce fork choice after restart. The storage
+The chain store gives a full node durable block storage. It retains validated
+side branches and reproduces the same fork choice after restart. The storage
 format is a node implementation detail, not a consensus format: nodes may use a
 different database layout as long as they validate the same blocks and derive
-the same active state.
+the same active state. Network synchronization and locally mined blocks both
+enter storage through this API.
 
 A data directory contains:
 
@@ -22,8 +23,8 @@ SQLite index and account-state cache that can be recreated from `blocks.dat`.
 
 ## `blocks.dat`
 
-The file contains append-only Version 1 records; the record encoding did not
-change in Stage 8.1. Genesis is always the first record. Non-Genesis records
+The file contains append-only Version 1 records. Genesis is always the first
+record. Non-Genesis records
 follow in validated arrival order, and a parent must occur before every child.
 Multiple records may therefore have the same height.
 
@@ -95,6 +96,15 @@ result.
 The store supports one writer per data directory. Concurrent writer locking,
 segmented block files, pruning, orphan buffering, and reorganization journals
 are deferred.
+
+## C++ API
+
+`bbc::storage::ChainStore` in `include/bbc/storage/chain_store.hpp` is the
+durable API. `initialize()` creates a store with Genesis, `open()` validates and
+reconstructs an existing store, and `append(Block)` performs consensus
+validation plus durable persistence. `blockchain()` exposes the read-only
+in-memory `Blockchain`, including its active chain, side branches, and account
+state. Errors distinguish storage failures from consensus rejection.
 
 ## CLI
 

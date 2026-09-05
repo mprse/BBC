@@ -6,10 +6,10 @@ Accepted on 2026-09-03.
 
 ## Context
 
-Stage 3 needs a canonical block representation before Proof of Work, chain state,
-storage, or networking can be implemented. A block must commit to its ordered
-transactions, identify its parent, name the account that will receive the future
-block reward, and reserve the fields required by Stage 4 mining.
+BBC needs a canonical block representation shared by Proof of Work, chain state,
+storage, and networking. A block must commit to its ordered transactions,
+identify its parent, name the account that receives the block reward, and carry
+the fields required by mining.
 
 The concept document contained two possible bootstrapping models: a genesis
 allocation and an empty genesis followed by mining rewards. The project selected
@@ -30,16 +30,16 @@ BBC Block v1 uses the canonical binary format specified in
   transaction list.
 - The all-zero reward-recipient value is reserved for Genesis. Every other block
   must name a nonzero BBC address hash.
-- The block does not encode a reward amount. A full node will derive the subsidy
-  from consensus rules and block height in Stage 5, then add transaction fees.
+- The block does not encode a reward amount. A full node derives the subsidy
+  from consensus rules and block height, then adds transaction fees.
 - Genesis has height zero, zero previous hash, no reward recipient, timestamp
   zero, the maximum 256-bit target, mining nonce zero, and no transactions.
 - Genesis issues no BBC. The first non-Genesis block can be reward-only, allowing
   issuance to start even when no account has funds.
 
-The target and mining nonce are serialized in Stage 3 so Stage 4 does not change
-block IDs. Stage 3 does not yet decide whether a non-Genesis block satisfies its
-target.
+The target and mining nonce are serialized in the canonical header so mining
+does not change the block format. Proof-of-Work validation decides whether a
+non-Genesis block satisfies its target.
 
 ## Consequences
 
@@ -51,5 +51,5 @@ target.
   mining while the mempool is empty.
 - Changing any field, Merkle rule, limit, or Genesis constant is a consensus
   change and requires a new protocol decision.
-- Proof of Work, parent-chain validation, timestamp rules, account balances,
-  transaction nonces, fees, and reward crediting remain outside Stage 3.
+- Proof of Work and the chain-state layer separately define parent validation,
+  timestamp rules, account balances, transaction nonces, fees, and rewards.

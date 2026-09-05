@@ -1,7 +1,6 @@
 # BBC Network Profiles
 
 - Status: Accepted
-- Scope: Stage 7.3
 
 BBC has two isolated network profiles. A profile fixes the chain ID, P2P magic,
 Genesis Block ID, and Proof-of-Work target. Data directories and blocks cannot

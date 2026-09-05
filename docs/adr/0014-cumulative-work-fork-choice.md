@@ -5,7 +5,7 @@
 
 ## Context
 
-Stage 7 can propagate and synchronize one active chain, but simultaneous miners
+BBC can propagate and synchronize an active chain, but simultaneous miners
 can legitimately produce different valid blocks with the same parent. Rejecting
 the second block loses information needed to follow a branch that later becomes
 the strongest chain. Account state and the local mempool must also follow the
@@ -19,7 +19,7 @@ valid non-Genesis blocks on a profile therefore represent equal work.
 - Store every fully validated block whose parent is already stored, including a
   valid block on a side branch.
 - Reject duplicate blocks and blocks whose parent is unknown. Orphan buffering
-  is not part of this stage.
+  is not implemented.
 - Associate each stored block with its parent, the state after that block, and
   cumulative work. Genesis has zero work; each valid Version 1 block adds one
   work unit because the target is fixed.

@@ -5,7 +5,8 @@
 
 ## Context
 
-Stage 7.2 proves that a funded wallet can submit a signed transaction and that
+Transaction propagation proves that a funded wallet can submit a signed
+transaction and that
 full nodes independently converge on its pending ID. A complete vertical slice
 must also prove that miners receive the transaction in a later template, that a
 winning block confirms it, and that every full node derives the same account
@@ -46,4 +47,4 @@ two block subsidies.
 
 This design supports miners that observed the chain from Genesis during the
 current run. A late or restarted mining-only actor still cannot discover and
-download missing blocks; that remains Stage 7.4 initial synchronization.
+download missing blocks because mining-only actors do not store full history.
