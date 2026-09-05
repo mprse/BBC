@@ -2,7 +2,7 @@
 
 #include "app/command_options.hpp"
 #include "bbc/node/control_server.hpp"
-#include "bbc/node/node_config.hpp"
+#include "bbc/node/scenario_actor_config.hpp"
 
 #include <filesystem>
 #include <optional>
@@ -23,20 +23,20 @@ int run_node(
     std::ostream& output,
     std::ostream& error_output
 ) {
-    if (!validate_options(options, {"--config"}, error_output)) {
+    if (!validate_options(options, {"--scenario-config"}, error_output)) {
         return usage_error;
     }
     const std::optional<std::string_view> config_path =
-        required_option(options, "--config", error_output);
+        required_option(options, "--scenario-config", error_output);
     if (!config_path.has_value()) {
         return usage_error;
     }
-    node::NodeConfigResult loaded = node::load_node_config(
+    node::ScenarioActorConfigResult loaded = node::load_scenario_actor_config(
         std::filesystem::path{std::string{*config_path}}
     );
     if (!loaded.has_value()) {
-        error_output << "Could not load node configuration: "
-                     << node::node_config_error_message(loaded.error()) << '\n';
+        error_output << "Could not load scenario actor configuration: "
+                     << node::scenario_actor_config_error_message(loaded.error()) << '\n';
         return runtime_error;
     }
     return node::run_controlled_node(
@@ -50,7 +50,7 @@ int run_node(
 
 void print_node_help(std::ostream& output) {
     output << "Node commands:\n"
-           << "  bbc node run --config <path>\n";
+           << "  bbc node run --scenario-config <path>\n";
 }
 
 int run_node_command(

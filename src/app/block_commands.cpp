@@ -378,7 +378,7 @@ int verify_block_file(
     output << "Block verification: success\n"
            << "Block ID: " << crypto::to_upper_hex(loaded.value().id()) << '\n'
            << "Format and Proof of Work are valid. Chain state is not checked in "
-              "Stage 4.\n";
+              "this command.\n";
     return success;
 }
 

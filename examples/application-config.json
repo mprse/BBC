@@ -1,0 +1,24 @@
+{
+  "schema_version": 1,
+  "name": "home-node",
+  "network": "development",
+  "roles": ["wallet", "full_node"],
+  "wallet": {
+    "file": "../wallet.dat"
+  },
+  "data_directory": "../node-home",
+  "full_node": {
+    "listen": {
+      "host": "127.0.0.1",
+      "port": 7333
+    },
+    "peers": []
+  },
+  "rpc": {
+    "listen": {
+      "host": "127.0.0.1",
+      "port": 7334
+    },
+    "token_file": "../rpc.token"
+  }
+}

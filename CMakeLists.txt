@@ -27,6 +27,7 @@ add_library(
     src/app/block_commands.cpp
     src/app/chain_commands.cpp
     src/app/command_options.cpp
+    src/app/config_commands.cpp
     src/app/mempool_commands.cpp
     src/app/node_commands.cpp
     src/app/password_reader.cpp
@@ -38,6 +39,7 @@ add_library(
     src/chain/blockchain.cpp
     src/chain/state.cpp
     src/consensus/proof_of_work.cpp
+    src/config/application_config.cpp
     src/core/version.cpp
     src/core/network.cpp
     src/crypto/hash.cpp
@@ -48,7 +50,7 @@ add_library(
     src/network/protocol.cpp
     src/network/peer_network.cpp
     src/node/control_server.cpp
-    src/node/node_config.cpp
+    src/node/scenario_actor_config.cpp
     src/storage/chain_store.cpp
     src/storage/mempool_store.cpp
     src/transaction/transaction.cpp
@@ -83,6 +85,7 @@ if(BUILD_TESTING)
     add_executable(
         bbc_tests
         tests/application_tests.cpp
+        tests/application_config_tests.cpp
         tests/block_tests.cpp
         tests/blockchain_tests.cpp
         tests/proof_of_work_tests.cpp

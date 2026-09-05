@@ -379,7 +379,13 @@ def start_actor(
     try:
         write_actor_config(actor)
         actor.process = subprocess.Popen(
-            [str(executable), "node", "run", "--config", str(actor.config_path)],
+            [
+                str(executable),
+                "node",
+                "run",
+                "--scenario-config",
+                str(actor.config_path),
+            ],
             cwd=PROJECT_ROOT,
             stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT,

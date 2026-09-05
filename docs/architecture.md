@@ -40,7 +40,8 @@ restricted to one computer.
 | `mempool` | Pending transaction policy and selection | `Mempool` |
 | `storage` | Authoritative blocks and rebuildable SQLite caches | `ChainStore`, `MempoolStore` |
 | `network` | Framing, handshakes, relay, synchronization | P2P protocol version 1 |
-| `node` | Long-running actor composition and local test control | `bbc node run` |
+| `node` | Long-running scenario actor and local test control | `bbc node run --scenario-config` |
+| `config` | Strict persistent application settings | `ApplicationConfig`, `bbc config ...` |
 | `app` | Human-facing command dispatch | `bbc <command>` |
 | `tools/scenario.py` | Multi-process orchestration and assertions | Scenario JSON |
 

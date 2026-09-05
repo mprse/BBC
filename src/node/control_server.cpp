@@ -67,7 +67,7 @@ private:
 
 class NodeRuntime final {
 public:
-    explicit NodeRuntime(NodeConfig config) : config_(std::move(config)) {}
+    explicit NodeRuntime(ScenarioActorConfig config) : config_(std::move(config)) {}
 
     ~NodeRuntime() {
         stop_network();
@@ -114,7 +114,7 @@ public:
         return true;
     }
 
-    [[nodiscard]] const NodeConfig& config() const noexcept {
+    [[nodiscard]] const ScenarioActorConfig& config() const noexcept {
         return config_;
     }
 
@@ -1518,7 +1518,7 @@ private:
         return names;
     }
 
-    NodeConfig config_;
+    ScenarioActorConfig config_;
     std::optional<wallet::Wallet> wallet_;
     std::optional<storage::ChainStore> chain_store_;
     std::optional<storage::MempoolStore> mempool_store_;
@@ -1773,7 +1773,7 @@ void serve_connection(
 }  // namespace
 
 int run_controlled_node(
-    NodeConfig config,
+    ScenarioActorConfig config,
     std::ostream& output,
     std::ostream& error_output
 ) {

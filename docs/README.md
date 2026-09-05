@@ -9,6 +9,8 @@ when a topic crosses subsystem boundaries.
 - [`glossary.md`](glossary.md) explains abbreviations and domain terms.
 - [`architecture.md`](architecture.md) explains the components, data flow,
   process roles, APIs, persistence, and validation boundaries.
+- [`application-config.md`](application-config.md) defines persistent wallet,
+  node, miner, peer, and local-command settings.
 - [`toolchain.md`](toolchain.md) explains supported development tools and build
   procedures for Windows, Linux, and an eventual EC2 host.
 - [`local-network-test-plan.md`](local-network-test-plan.md) explains actor roles,

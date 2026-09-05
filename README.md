@@ -64,11 +64,32 @@ BBC currently provides:
   relay, mining workers, and initial synchronization;
 - persistent side branches, cumulative-work fork choice, reorganizations, and
   detached-transaction restoration;
-- a Python scenario runner for observable multi-process tests on one computer.
+- a Python scenario runner for observable multi-process tests on one computer;
+- strict persistent application configuration parsing with normalized paths and
+  role-specific validation.
 
 The P2P and test-control endpoints are currently restricted to IPv4 loopback.
-LAN and public-Internet listening, static seed peers, persistent application
-profiles, and a user-facing command client are not implemented yet.
+LAN and public-Internet listening, static seed discovery, normal node startup
+from persistent configuration, and a user-facing command client are not
+implemented yet.
+
+## Application configuration
+
+BBC keeps persistent user configuration separate from generated scenario actor
+configuration. Validate or inspect the included example with:
+
+```console
+.\build\windows-msvc-debug\bbc.exe config validate --file examples\application-config.json
+.\build\windows-msvc-debug\bbc.exe config show --file examples\application-config.json
+```
+
+The parser validates the mandatory wallet role, optional full-node and miner
+roles, paths, endpoints, peers, mining reward address, and loopback RPC
+boundary. Normal `node run --config` and RPC commands are not connected yet;
+the currently working long-running command is reserved for the test runner as
+`node run --scenario-config`. See
+[application-config.md](docs/application-config.md) for the complete format and
+integration status.
 
 ## Wallet workflow
 

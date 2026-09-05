@@ -122,6 +122,7 @@ The repository is organized by responsibility:
 |-- src/
 |   |-- app/
 |   |-- chain/
+|   |-- config/
 |   |-- consensus/
 |   |-- core/
 |   |-- crypto/

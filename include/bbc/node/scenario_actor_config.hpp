@@ -17,7 +17,7 @@ enum class ActorRole {
     miner,
 };
 
-struct NodeConfig {
+struct ScenarioActorConfig {
     std::string name;
     std::vector<ActorRole> roles;
     std::filesystem::path data_directory;
@@ -29,7 +29,7 @@ struct NodeConfig {
     [[nodiscard]] bool has_role(ActorRole role) const noexcept;
 };
 
-enum class NodeConfigError {
+enum class ScenarioActorConfigError {
     none,
     io_error,
     invalid_json,
@@ -43,26 +43,26 @@ enum class NodeConfigError {
     invalid_control_token,
 };
 
-class NodeConfigResult final {
+class ScenarioActorConfigResult final {
 public:
-    explicit NodeConfigResult(NodeConfig config);
-    explicit NodeConfigResult(NodeConfigError error);
+    explicit ScenarioActorConfigResult(ScenarioActorConfig config);
+    explicit ScenarioActorConfigResult(ScenarioActorConfigError error);
 
     [[nodiscard]] bool has_value() const noexcept;
-    [[nodiscard]] NodeConfig& value() &;
-    [[nodiscard]] const NodeConfig& value() const&;
-    [[nodiscard]] NodeConfig&& value() &&;
-    [[nodiscard]] NodeConfigError error() const noexcept;
+    [[nodiscard]] ScenarioActorConfig& value() &;
+    [[nodiscard]] const ScenarioActorConfig& value() const&;
+    [[nodiscard]] ScenarioActorConfig&& value() &&;
+    [[nodiscard]] ScenarioActorConfigError error() const noexcept;
 
 private:
-    std::variant<NodeConfig, NodeConfigError> value_;
+    std::variant<ScenarioActorConfig, ScenarioActorConfigError> value_;
 };
 
-[[nodiscard]] NodeConfigResult load_node_config(
+[[nodiscard]] ScenarioActorConfigResult load_scenario_actor_config(
     const std::filesystem::path& path
 );
-[[nodiscard]] std::string_view node_config_error_message(
-    NodeConfigError error
+[[nodiscard]] std::string_view scenario_actor_config_error_message(
+    ScenarioActorConfigError error
 ) noexcept;
 [[nodiscard]] std::string_view actor_role_name(ActorRole role) noexcept;
 

@@ -17,8 +17,8 @@ normal C++ code paths.
 
 ## 2. Actors and roles
 
-A scenario actor is one long-running `bbc node run` process. Its `roles` array
-may contain:
+A scenario actor is one long-running `bbc node run --scenario-config` process.
+Its `roles` array may contain:
 
 - `wallet`: owns an ephemeral test key and can sign a payment;
 - `full_node`: stores and validates blocks, maintains a mempool, listens for

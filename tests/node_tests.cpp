@@ -1,4 +1,4 @@
-#include "bbc/node/node_config.hpp"
+#include "bbc/node/scenario_actor_config.hpp"
 
 #include <catch2/catch_test_macros.hpp>
 
@@ -8,9 +8,9 @@
 
 namespace {
 
-class TemporaryNodeConfig final {
+class TemporaryScenarioActorConfig final {
 public:
-    explicit TemporaryNodeConfig(
+    explicit TemporaryScenarioActorConfig(
         const std::string_view name,
         const std::string_view contents
     ) : path_(std::filesystem::temp_directory_path() / name) {
@@ -22,10 +22,10 @@ public:
         REQUIRE(output);
     }
 
-    TemporaryNodeConfig(const TemporaryNodeConfig&) = delete;
-    TemporaryNodeConfig& operator=(const TemporaryNodeConfig&) = delete;
+    TemporaryScenarioActorConfig(const TemporaryScenarioActorConfig&) = delete;
+    TemporaryScenarioActorConfig& operator=(const TemporaryScenarioActorConfig&) = delete;
 
-    ~TemporaryNodeConfig() {
+    ~TemporaryScenarioActorConfig() {
         std::error_code error;
         std::filesystem::remove(path_, error);
     }
@@ -40,9 +40,9 @@ private:
 
 }  // namespace
 
-TEST_CASE("node configuration loads actor roles and loopback control", "[node]") {
-    TemporaryNodeConfig config{
-        "bbc-stage7-node-config.json",
+TEST_CASE("scenario actor configuration loads roles and loopback control", "[node]") {
+    TemporaryScenarioActorConfig config{
+        "bbc-scenario-actor-config.json",
         R"({
             "schema_version": 1,
             "name": "node-a",
@@ -61,8 +61,8 @@ TEST_CASE("node configuration loads actor roles and loopback control", "[node]")
         })"
     };
 
-    bbc::node::NodeConfigResult loaded =
-        bbc::node::load_node_config(config.path());
+    bbc::node::ScenarioActorConfigResult loaded =
+        bbc::node::load_scenario_actor_config(config.path());
 
     REQUIRE(loaded.has_value());
     CHECK(loaded.value().name == "node-a");
@@ -73,9 +73,9 @@ TEST_CASE("node configuration loads actor roles and loopback control", "[node]")
     CHECK_FALSE(loaded.value().has_role(bbc::node::ActorRole::miner));
 }
 
-TEST_CASE("full-node configuration requires a loopback P2P endpoint", "[node]") {
-    TemporaryNodeConfig config{
-        "bbc-stage7-invalid-p2p-node-config.json",
+TEST_CASE("full-node scenario configuration requires a loopback P2P endpoint", "[node]") {
+    TemporaryScenarioActorConfig config{
+        "bbc-invalid-p2p-scenario-actor-config.json",
         R"({
             "schema_version": 1,
             "name": "node-a",
@@ -91,16 +91,16 @@ TEST_CASE("full-node configuration requires a loopback P2P endpoint", "[node]") 
         })"
     };
 
-    const bbc::node::NodeConfigResult loaded =
-        bbc::node::load_node_config(config.path());
+    const bbc::node::ScenarioActorConfigResult loaded =
+        bbc::node::load_scenario_actor_config(config.path());
 
     CHECK_FALSE(loaded.has_value());
-    CHECK(loaded.error() == bbc::node::NodeConfigError::invalid_p2p_endpoint);
+    CHECK(loaded.error() == bbc::node::ScenarioActorConfigError::invalid_p2p_endpoint);
 }
 
-TEST_CASE("node configuration rejects non-loopback control endpoints", "[node]") {
-    TemporaryNodeConfig config{
-        "bbc-stage7-invalid-node-config.json",
+TEST_CASE("scenario actor configuration rejects non-loopback control endpoints", "[node]") {
+    TemporaryScenarioActorConfig config{
+        "bbc-invalid-scenario-actor-config.json",
         R"({
             "schema_version": 1,
             "name": "node-a",
@@ -115,11 +115,11 @@ TEST_CASE("node configuration rejects non-loopback control endpoints", "[node]")
         })"
     };
 
-    const bbc::node::NodeConfigResult loaded =
-        bbc::node::load_node_config(config.path());
+    const bbc::node::ScenarioActorConfigResult loaded =
+        bbc::node::load_scenario_actor_config(config.path());
 
     CHECK_FALSE(loaded.has_value());
     CHECK(
-        loaded.error() == bbc::node::NodeConfigError::invalid_control_endpoint
+        loaded.error() == bbc::node::ScenarioActorConfigError::invalid_control_endpoint
     );
 }

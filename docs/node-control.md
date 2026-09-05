@@ -12,7 +12,7 @@ consensus.
 ## Actor command
 
 ```console
-bbc node run --config <generated-actor-config.json>
+bbc node run --scenario-config <generated-actor-config.json>
 ```
 
 The configuration is generated inside an ignored scenario run directory:
@@ -35,6 +35,10 @@ The configuration is generated inside an ignored scenario run directory:
   }
 }
 ```
+
+The typed C++ representation is `bbc::node::ScenarioActorConfig` in
+`include/bbc/node/scenario_actor_config.hpp`. It is intentionally independent
+from the persistent `ApplicationConfig` described in `application-config.md`.
 
 Actor names contain 1 through 64 ASCII letters, digits, underscores, or hyphens.
 Roles are unique values from `wallet`, `full_node`, and `miner`. A `full_node`
