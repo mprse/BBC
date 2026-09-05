@@ -138,4 +138,18 @@ if(BUILD_TESTING)
         BBC.local-transaction-propagation-regtest
         PROPERTIES TIMEOUT 30
     )
+
+    add_test(
+        NAME BBC.local-transaction-confirmation-regtest
+        COMMAND
+            "${Python3_EXECUTABLE}"
+            "${CMAKE_SOURCE_DIR}/tools/scenario.py"
+            "${CMAKE_SOURCE_DIR}/scenarios/transaction-confirmation-regtest.json"
+            --executable "$<TARGET_FILE:bbc>"
+            --no-ui
+    )
+    set_tests_properties(
+        BBC.local-transaction-confirmation-regtest
+        PROPERTIES TIMEOUT 30
+    )
 endif()

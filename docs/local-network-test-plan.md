@@ -412,7 +412,7 @@ Duplicate relay is stopped by transaction-ID deduplication. Rejection scenarios,
 automatic nonce lookup, multiple concurrent wallet submissions, and wallet-only
 P2P clients remain follow-up work.
 
-### Stage 7.3: Block propagation and mining workers (first slice implemented)
+### Stage 7.3: Block propagation and mining workers (implemented)
 
 - block-template request and response;
 - bounded/cancellable mining work;
@@ -423,8 +423,11 @@ P2P clients remain follow-up work.
 The implemented slice covers height-1 reward-only templates, two outbound-only
 wallet miners, one authoritative full node, real batched Proof of Work, block
 submission, persistence, relay, and stale-work cancellation. Templates now
-select pending transactions from the full node's mempool. Mining and validating
-the transaction-backed height-2 block remains the next end-to-end increment.
+select pending transactions from the full node's mempool. The confirmation
+scenario runs a second coordinated race, mines the pending payment into height
+2, relays the winner, revalidates both persistent mempools, and verifies account
+balances, the sender nonce, the miner fee, total supply, and full-node state
+convergence.
 
 ### Stage 7.4: Initial synchronization
 

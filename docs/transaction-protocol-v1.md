@@ -96,3 +96,11 @@ scenario must:
 - sign and submit a payment with nonce zero;
 - observe an accepted result at the sender;
 - observe the same single transaction ID in both full-node mempools.
+
+The confirmation scenario then performs a second mining race and must verify:
+
+- the height-2 template contains the pending transaction;
+- both full nodes accept and persist the same winning block;
+- both persistent mempools remove the confirmed transaction;
+- both full nodes derive identical balances and nonces;
+- the height-2 miner receives the transaction fee in addition to its subsidy.

@@ -102,7 +102,10 @@ and does not expose a listener.
 The connection is rejected when the chain ID or Genesis Block ID differs from
 the local network. Equal session nonces indicate a self-connection and are also
 rejected. Tip fields are informational in Stage 7.1 and do not modify local
-chain state.
+chain state. An already-connected mining worker advances its small validated-tip
+view only after receiving an accepted `BLOCK` or matching successful
+`BLOCK_RESULT`; it does not treat later templates as evidence that blocks were
+accepted.
 
 The handshake is complete only after the local `HELLO` has been sent and a
 valid remote `HELLO` has been received. A non-`HELLO` first message, a second

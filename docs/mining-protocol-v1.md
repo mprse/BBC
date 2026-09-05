@@ -12,6 +12,11 @@ constructs templates, validates submitted blocks, persists the winner, and
 relays an accepted block. A wallet address in the template request determines
 the block reward recipient.
 
+An outbound-only miner retains the height and ID of each accepted block it
+observes. This small validated-tip view lets it verify the parent and height of
+the next template without storing the full blockchain. It does not provide
+late-join synchronization; a miner that starts behind still needs Stage 7.4.
+
 ## 2. Messages
 
 All integers are unsigned little-endian. Blocks use the canonical encoding in
@@ -73,3 +78,9 @@ exactly one accepted miner and one cancelled miner.
 `transaction-propagation-regtest.json` continues from the same race. Its winner
 submits a signed payment, both full nodes converge on one pending transaction,
 and subsequent templates include that mempool selection.
+
+`transaction-confirmation-regtest.json` runs the second race and verifies that
+the height-2 winner confirms the payment. Both full nodes must converge on the
+same tip and account state, expose empty mempools, and report one transaction in
+the tip. `transaction-confirmation-development.json` exercises the same flow at
+the deliberately slower demonstration difficulty and is not part of CTest.

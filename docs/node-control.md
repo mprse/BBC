@@ -156,9 +156,16 @@ Implemented steps are:
 - `{"command": "restart", "actor": "node-b"}`;
 - `{"command": "dump", "actors": "all"}`.
 
-It implements `all_ready`, `same_tip`, exact `height`, full-node
-`mempool_size`, `same_mempool`, per-actor `peer_count`, `mining_outcome`, and
-`winner_reward` assertions. Restart preserves the
+The mining command and completion wait may be repeated for later heights. The
+runner records one winner per completed round so assertions can distinguish the
+funded sender from the miner that confirms its payment.
+
+It implements `all_ready`, `same_tip`, `same_state`, exact `height`, exact
+`tip_transaction_count`, full-node `mempool_size`, `same_mempool`, per-actor
+`peer_count`, `mining_outcome`, `winner_reward`, and `payment_confirmed`
+assertions. `payment_confirmed` verifies the dynamic balance outcome for either
+the same or different winners across the first two rounds, including the
+height-2 fee, sender nonce, and total supply. Restart preserves the
 actor data directory and resolved P2P port, allowing configured peers to prove
 automatic reconnect. Unsupported future steps and assertions fail explicitly
 rather than being ignored.

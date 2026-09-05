@@ -1,0 +1,82 @@
+{
+  "schema_version": 1,
+  "name": "transaction-confirmation-regtest",
+  "network": {
+    "profile": "regtest",
+    "step_timeout_ms": 15000
+  },
+  "actors": [
+    {
+      "name": "full-a",
+      "roles": ["full_node"],
+      "control": "127.0.0.1:0",
+      "p2p": "127.0.0.1:0",
+      "peers": ["full-b"]
+    },
+    {
+      "name": "full-b",
+      "roles": ["full_node"],
+      "control": "127.0.0.1:0",
+      "p2p": "127.0.0.1:0"
+    },
+    {
+      "name": "miner-a",
+      "roles": ["wallet", "miner"],
+      "control": "127.0.0.1:0",
+      "mining_source": "full-a"
+    },
+    {
+      "name": "miner-b",
+      "roles": ["wallet", "miner"],
+      "control": "127.0.0.1:0",
+      "mining_source": "full-a"
+    },
+    {
+      "name": "receiver",
+      "roles": ["wallet"],
+      "control": "127.0.0.1:0"
+    }
+  ],
+  "steps": [
+    {"command": "start_all"},
+    {"wait": "all_ready"},
+    {"command": "connect_all"},
+    {"wait": "full_nodes_connected"},
+    {"command": "start_mining", "actors": ["miner-a", "miner-b"]},
+    {"wait": "mining_complete", "height": 1},
+    {
+      "command": "submit_transaction",
+      "from": "mining_winner",
+      "miners": ["miner-a", "miner-b"],
+      "to": "receiver",
+      "amount": 1000000000,
+      "fee": 1000,
+      "nonce": 0
+    },
+    {"wait": "transaction_propagated"},
+    {"command": "start_mining", "actors": ["miner-a", "miner-b"]},
+    {"wait": "mining_complete", "height": 2},
+    {"command": "dump", "actors": "all"}
+  ],
+  "assertions": [
+    {"all_ready": true},
+    {"same_tip": ["full-a", "full-b"]},
+    {"same_state": ["full-a", "full-b"]},
+    {"height": {"actors": ["full-a", "full-b"], "value": 2}},
+    {"tip_transaction_count": {"actors": ["full-a", "full-b"], "value": 1}},
+    {"mempool_size": 0},
+    {"same_mempool": ["full-a", "full-b"]},
+    {"peer_count": {"actor": "full-a", "value": 3}},
+    {"peer_count": {"actor": "full-b", "value": 1}},
+    {"mining_outcome": {"actors": ["miner-a", "miner-b"]}},
+    {
+      "payment_confirmed": {
+        "full_nodes": ["full-a", "full-b"],
+        "recipient": "receiver",
+        "amount": 1000000000,
+        "fee": 1000,
+        "block_reward": 5000000000
+      }
+    }
+  ]
+}

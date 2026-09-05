@@ -414,6 +414,19 @@ transaction ID. The wire messages and result codes are specified in
 [`docs/transaction-protocol-v1.md`](docs/transaction-protocol-v1.md) and accepted
 by [`docs/adr/0011-transaction-propagation.md`](docs/adr/0011-transaction-propagation.md).
 
+Run the complete fast confirmation flow through block 2:
+
+```console
+python tools/scenario.py scenarios/transaction-confirmation-regtest.json --no-ui
+```
+
+Use the development profile to watch both mining races at normal demonstration
+difficulty:
+
+```console
+python tools/scenario.py scenarios/transaction-confirmation-development.json
+```
+
 ## Stage 7.3: First network mining race
 
 Run the fast automated profile:
@@ -433,6 +446,12 @@ height-1 block is persisted and rewarded; the competing miner stops with
 `stale_parent`. Network parameters and wire payloads are defined in
 `docs/network-profiles.md` and `docs/mining-protocol-v1.md`. A full node now
 selects up to 1,000 pending transactions when it builds a later template.
+
+The transaction-confirmation scenarios run a second coordinated race. The
+height-2 winner confirms the pending payment, receives the normal subsidy plus
+its fee, and causes both full nodes to remove the transaction from their
+mempools. The architectural decision is recorded in
+[`docs/adr/0012-network-transaction-confirmation.md`](docs/adr/0012-network-transaction-confirmation.md).
 
 ## Visual Studio Code
 

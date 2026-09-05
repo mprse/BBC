@@ -593,7 +593,7 @@ def wait_for_mining(
     display: Display,
     timeout_seconds: float,
     height: int,
-) -> None:
+) -> str:
     miners = [actor for actor in actors if "miner" in actor.roles]
     full_nodes = [actor for actor in actors if "full_node" in actor.roles]
     deadline = time.monotonic() + timeout_seconds
@@ -601,22 +601,35 @@ def wait_for_mining(
     while True:
         drain_events(output_queue, display)
         miner_states: list[str] = []
+        miner_heights: list[int] = []
         heights: list[int] = []
         for actor in miners:
             status = control_request(actor, request_id, "status", timeout_seconds)
             request_id += 1
             miner_states.append(status["mining"]["state"])
+            miner_heights.append(status["mining"]["known_height"])
         for actor in full_nodes:
             status = control_request(actor, request_id, "status", timeout_seconds)
             request_id += 1
             heights.append(status["chain"]["height"])
         if heights and all(value == height for value in heights) and all(
             state in {"accepted", "cancelled", "rejected"} for state in miner_states
-        ):
-            return
+        ) and all(value == height for value in miner_heights):
+            winners = [
+                actor.name
+                for actor, state in zip(miners, miner_states)
+                if state == "accepted"
+            ]
+            if len(winners) != 1:
+                raise ScenarioError(
+                    f"Mining round has {len(winners)} winners: {winners}."
+                )
+            return winners[0]
         if time.monotonic() >= deadline:
             raise ScenarioError(
-                f"Timed out waiting for mining: states={miner_states}, heights={heights}."
+                "Timed out waiting for mining: "
+                f"states={miner_states}, miner_heights={miner_heights}, "
+                f"full_node_heights={heights}."
             )
         time.sleep(0.02)
 
@@ -689,13 +702,17 @@ def run_steps(
     output_queue: queue.Queue[tuple[Actor, str]],
     display: Display,
     timeout_seconds: float,
-) -> dict[str, Any]:
+) -> tuple[dict[str, Any], dict[str, Any]]:
     if not isinstance(steps, list):
         raise ScenarioError("Scenario steps must be an array.")
     started = False
     dumps: dict[str, Any] = {}
     expected_pongs: dict[str, int] = {}
     submitted_transaction: tuple[Actor, str] | None = None
+    scenario_state: dict[str, Any] = {
+        "mining_winners": [],
+        "transactions": [],
+    }
     request_id = 1
     for step in steps:
         if not isinstance(step, dict):
@@ -786,9 +803,10 @@ def run_steps(
             if not isinstance(height, int) or height < 1:
                 raise ScenarioError("mining_complete requires a positive height.")
             display.controller(f"Waiting for block {height}")
-            wait_for_mining(
+            winner = wait_for_mining(
                 actors, output_queue, display, timeout_seconds, height
             )
+            scenario_state["mining_winners"].append(winner)
             display.controller(f"Block {height} accepted; losing miners stopped")
         elif step.get("command") == "submit_transaction":
             sender_name = step.get("from")
@@ -840,6 +858,14 @@ def run_steps(
             )
             request_id += 1
             submitted_transaction = (sender, result["transaction_id"])
+            scenario_state["transactions"].append({
+                "id": result["transaction_id"],
+                "sender": sender.name,
+                "recipient": recipient.name,
+                "amount": amount,
+                "fee": fee,
+                "nonce": nonce,
+            })
         elif step.get("wait") == "transaction_propagated":
             if submitted_transaction is None:
                 raise ScenarioError("No transaction was submitted.")
@@ -882,10 +908,15 @@ def run_steps(
             raise ScenarioError(f"Unsupported scenario step: {step}")
     if not started:
         raise ScenarioError("Scenario must contain start_all.")
-    return dumps
+    return dumps, scenario_state
 
 
-def run_assertions(assertions: Any, dumps: dict[str, Any], actors: list[Actor]) -> None:
+def run_assertions(
+    assertions: Any,
+    dumps: dict[str, Any],
+    actors: list[Actor],
+    scenario_state: dict[str, Any],
+) -> None:
     if not isinstance(assertions, list):
         raise ScenarioError("Scenario assertions must be an array.")
     for assertion in assertions:
@@ -907,6 +938,14 @@ def run_assertions(assertions: Any, dumps: dict[str, Any], actors: list[Actor]) 
                 ) from error
             if len(set(tips)) != 1:
                 raise ScenarioError(f"Assertion failed: chain tips differ: {tips}")
+        elif "same_state" in assertion:
+            selected = actor_selection(assertion["same_state"], actors)
+            states = [
+                dumps[actor.name]["chain"]["accounts"]
+                for actor in selected
+            ]
+            if not states or any(value != states[0] for value in states[1:]):
+                raise ScenarioError("Assertion failed: account states differ.")
         elif "height" in assertion:
             expected = assertion["height"]
             if not isinstance(expected, dict) or not isinstance(expected.get("value"), int):
@@ -939,6 +978,17 @@ def run_assertions(assertions: Any, dumps: dict[str, Any], actors: list[Actor]) 
                     raise ScenarioError(
                         f"Assertion failed: {actor.name} mempool size is {actual}, "
                         f"expected {expected}."
+                    )
+        elif "tip_transaction_count" in assertion:
+            expected = assertion["tip_transaction_count"]
+            if not isinstance(expected, dict) or not isinstance(expected.get("value"), int):
+                raise ScenarioError("tip_transaction_count assertion is invalid.")
+            for actor in actor_selection(expected.get("actors"), actors):
+                actual = dumps[actor.name]["chain"]["tip_transaction_count"]
+                if actual != expected["value"]:
+                    raise ScenarioError(
+                        f"Assertion failed: {actor.name} tip contains {actual} "
+                        f"transactions, expected {expected['value']}."
                     )
         elif "same_mempool" in assertion:
             selected = actor_selection(assertion["same_mempool"], actors)
@@ -995,6 +1045,80 @@ def run_assertions(assertions: Any, dumps: dict[str, Any], actors: list[Actor]) 
                     f"Winner {winners[0].name} has balance "
                     f"{balances.get(winner_address)}, expected {amount}."
                 )
+        elif "payment_confirmed" in assertion:
+            expected = assertion["payment_confirmed"]
+            if not isinstance(expected, dict):
+                raise ScenarioError("payment_confirmed assertion is invalid.")
+            full_nodes = actor_selection(expected.get("full_nodes"), actors)
+            recipient = actor_selection([expected.get("recipient")], actors)[0]
+            amount = expected.get("amount")
+            fee = expected.get("fee")
+            reward = expected.get("block_reward")
+            winners = scenario_state["mining_winners"]
+            transactions = scenario_state["transactions"]
+            if (
+                len(winners) < 2
+                or len(transactions) != 1
+                or any(not isinstance(value, int) or value < 0
+                       for value in (amount, fee, reward))
+            ):
+                raise ScenarioError("payment_confirmed has incomplete scenario state.")
+            transaction = transactions[0]
+            if (
+                transaction["sender"] != winners[0]
+                or transaction["recipient"] != recipient.name
+                or transaction["amount"] != amount
+                or transaction["fee"] != fee
+                or transaction["nonce"] != 0
+            ):
+                raise ScenarioError("Confirmed payment does not match the scenario.")
+
+            by_name = {actor.name: actor for actor in actors}
+            first_miner = by_name[winners[0]]
+            second_miner = by_name[winners[1]]
+            involved = {first_miner.name, second_miner.name, recipient.name}
+            addresses = {
+                name: dumps[name]["wallet_address"]
+                for name in involved
+            }
+            expected_balances: dict[str, int] = {}
+            for winner in (first_miner, second_miner):
+                address = addresses[winner.name]
+                expected_balances[address] = expected_balances.get(address, 0) + reward
+            sender_address = addresses[first_miner.name]
+            recipient_address = addresses[recipient.name]
+            expected_balances[sender_address] -= amount + fee
+            expected_balances[recipient_address] = (
+                expected_balances.get(recipient_address, 0) + amount
+            )
+            second_miner_address = addresses[second_miner.name]
+            expected_balances[second_miner_address] = (
+                expected_balances.get(second_miner_address, 0) + fee
+            )
+
+            for full_node in full_nodes:
+                accounts = {
+                    account["address"]: account
+                    for account in dumps[full_node.name]["chain"]["accounts"]
+                }
+                for address, expected_balance in expected_balances.items():
+                    actual = accounts.get(address, {"balance": 0})["balance"]
+                    if actual != expected_balance:
+                        raise ScenarioError(
+                            f"{full_node.name} balance for {address} is {actual}, "
+                            f"expected {expected_balance}."
+                        )
+                sender_nonce = accounts[sender_address]["next_nonce"]
+                if sender_nonce != 1:
+                    raise ScenarioError(
+                        f"{full_node.name} sender nonce is {sender_nonce}, expected 1."
+                    )
+                total_supply = sum(account["balance"] for account in accounts.values())
+                if total_supply != reward * 2:
+                    raise ScenarioError(
+                        f"{full_node.name} supply is {total_supply}, "
+                        f"expected {reward * 2}."
+                    )
         else:
             raise ScenarioError(f"Unsupported scenario assertion: {assertion}")
 
@@ -1066,7 +1190,7 @@ def main() -> int:
             json.dumps(document, indent=2) + "\n",
             encoding="utf-8",
         )
-        dumps = run_steps(
+        dumps, scenario_state = run_steps(
             document.get("steps"),
             actors,
             executable_path(arguments.executable),
@@ -1074,7 +1198,9 @@ def main() -> int:
             display,
             timeout_seconds,
         )
-        run_assertions(document.get("assertions", []), dumps, actors)
+        run_assertions(
+            document.get("assertions", []), dumps, actors, scenario_state
+        )
         success = True
         summary["success"] = True
         summary["actors"] = [actor.name for actor in actors]

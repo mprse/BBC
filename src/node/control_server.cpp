@@ -136,6 +136,11 @@ public:
         const crypto::Hash256 tip_id = chain_store_.has_value()
             ? chain_store_->blockchain().tip().id()
             : genesis.id();
+        if (config_.has_role(ActorRole::miner)) {
+            std::lock_guard lock{mining_mutex_};
+            mining_known_height_ = tip_height;
+            mining_known_tip_ = tip_id;
+        }
         events_ = &events;
         network_.emplace(
             network::PeerNetworkConfig{
@@ -382,6 +387,7 @@ public:
             result["chain"] = {
                 {"height", blockchain.tip().height()},
                 {"tip", crypto::to_upper_hex(blockchain.tip().id())},
+                {"tip_transaction_count", blockchain.tip().transactions().size()},
                 {"block_count", blockchain.block_count()},
                 {"account_count", blockchain.state().account_count()},
             };
@@ -415,6 +421,8 @@ public:
                 {"active", mining_active_.load()},
                 {"attempts", mining_attempts_.load()},
                 {"state", mining_state_},
+                {"known_height", mining_known_height_},
+                {"known_tip", crypto::to_upper_hex(mining_known_tip_)},
             };
         }
         if (wallet_.has_value()) {
@@ -685,9 +693,20 @@ private:
         const core::NetworkParameters& parameters =
             core::network_parameters(config_.network_profile);
         const wallet::Address own_address = wallet_->address();
+        std::uint64_t expected_height = 0;
+        crypto::Hash256 expected_tip{};
+        if (chain_store_.has_value()) {
+            std::lock_guard lock{state_mutex_};
+            expected_height = chain_store_->blockchain().tip().height() + 1;
+            expected_tip = chain_store_->blockchain().tip().id();
+        } else {
+            std::lock_guard lock{mining_mutex_};
+            expected_height = mining_known_height_ + 1;
+            expected_tip = mining_known_tip_;
+        }
         if (source == peers.end() || decoded.value().chain_id() != parameters.chain_id ||
-            decoded.value().height() != source->remote_height + 1 ||
-            decoded.value().previous_block_hash() != source->remote_tip ||
+            decoded.value().height() != expected_height ||
+            decoded.value().previous_block_hash() != expected_tip ||
             decoded.value().difficulty_target() != parameters.difficulty_target ||
             !decoded.value().reward_recipient().has_value() ||
             *decoded.value().reward_recipient() != own_address) {
@@ -752,6 +771,8 @@ private:
             bool own_block = false;
             {
                 std::lock_guard lock{mining_mutex_};
+                mining_known_height_ = block.height();
+                mining_known_tip_ = id;
                 own_block = found_block_id_.has_value() && *found_block_id_ == id;
             }
             if (own_block) {
@@ -789,6 +810,11 @@ private:
             });
             return;
         }
+        if (config_.has_role(ActorRole::miner)) {
+            std::lock_guard lock{mining_mutex_};
+            mining_known_height_ = block.height();
+            mining_known_tip_ = id;
+        }
         if (submission) {
             send_block_result(peer_id, id, true, 0);
         }
@@ -810,19 +836,24 @@ private:
         }
         crypto::Hash256 result_block_id{};
         std::ranges::copy(payload.first(32), result_block_id.begin());
+        const bool accepted = payload[32] == 1;
+        const std::uint16_t reason = static_cast<std::uint16_t>(payload[33]) |
+            static_cast<std::uint16_t>(payload[34]) << 8U;
         {
             std::lock_guard lock{mining_mutex_};
             if (!found_block_id_.has_value() || *found_block_id_ != result_block_id) {
                 return;
             }
+            if ((accepted && reason != 0) || (!accepted && reason == 0)) {
+                return;
+            }
+            if (accepted && mining_height_.has_value()) {
+                mining_known_height_ = *mining_height_;
+                mining_known_tip_ = result_block_id;
+            }
+            mining_state_ = accepted ? "accepted" : reason == 1
+                ? "cancelled" : "rejected";
         }
-        const bool accepted = payload[32] == 1;
-        const std::uint16_t reason = static_cast<std::uint16_t>(payload[33]) |
-            static_cast<std::uint16_t>(payload[34]) << 8U;
-        if ((accepted && reason != 0) || (!accepted && reason == 0)) {
-            return;
-        }
-        set_mining_state(accepted ? "accepted" : reason == 1 ? "cancelled" : "rejected");
         emit(
             accepted ? "mining_accepted" : reason == 1
                 ? "mining_cancelled"
@@ -973,6 +1004,8 @@ private:
     std::optional<crypto::Hash256> mining_parent_;
     std::optional<std::uint64_t> mining_height_;
     std::optional<crypto::Hash256> found_block_id_;
+    std::uint64_t mining_known_height_ = 0;
+    crypto::Hash256 mining_known_tip_{};
     bool defer_mining_start_ = false;
     std::optional<chain::Block> prepared_mining_candidate_;
     std::optional<std::uint64_t> prepared_mining_peer_;
