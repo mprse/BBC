@@ -170,4 +170,19 @@ if(BUILD_TESTING)
         BBC.local-late-join-sync-regtest
         PROPERTIES TIMEOUT 30
     )
+
+    add_test(
+        NAME BBC.local-fork-reorg-regtest
+        COMMAND
+            "${Python3_EXECUTABLE}"
+            "${CMAKE_SOURCE_DIR}/tools/scenario.py"
+            "${CMAKE_SOURCE_DIR}/scenarios/fork-reorg.json"
+            --executable "$<TARGET_FILE:bbc>"
+            --regtest
+            --no-ui
+    )
+    set_tests_properties(
+        BBC.local-fork-reorg-regtest
+        PROPERTIES TIMEOUT 45
+    )
 endif()

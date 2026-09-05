@@ -175,6 +175,7 @@ int add_block_to_store(
 
     const crypto::Hash256 block_id = loaded.value().id();
     const std::uint64_t block_height = loaded.value().height();
+    const chain::ChainState previous_state = opened.value().blockchain().state();
     const storage::ChainStoreAppendResult appended =
         opened.value().append(std::move(loaded).value());
     if (appended.storage_error != storage::ChainStoreError::none) {
@@ -189,24 +190,44 @@ int add_block_to_store(
         return runtime_error;
     }
 
-    output << "Block added to chain store\n"
+    output << "Block stored\n"
            << "Height: " << block_height << '\n'
            << "Block ID: " << crypto::to_upper_hex(block_id) << '\n'
+           << "Active chain changed: "
+           << (appended.chain_result.active_chain_changed ? "yes" : "no") << '\n'
            << "Chain height: "
            << opened.value().blockchain().tip().height() << '\n';
 
-    storage::MempoolStoreResult mempool_store = storage::MempoolStore::open(
+    storage::MempoolStoreResult opened_mempool = storage::MempoolStore::open(
         std::filesystem::path{std::string{*data_directory}},
-        opened.value().blockchain().state()
+        previous_state
     );
-    if (!mempool_store.has_value()) {
-        error_output << "Warning: block was added, but the mempool could not be "
+    if (!opened_mempool.has_value()) {
+        error_output << "Warning: block was stored, but the mempool could not be "
                         "revalidated: "
-                     << storage::mempool_store_error_message(mempool_store.error())
+                     << storage::mempool_store_error_message(opened_mempool.error())
                      << '\n';
     } else {
+        const storage::MempoolStoreReorganizationResult reconciled =
+            opened_mempool.value().reconcile_reorganization(
+                opened.value().blockchain().state(),
+                appended.chain_result.detached_blocks
+            );
+        if (!reconciled.has_value()) {
+            error_output << "Warning: block was stored, but the mempool could not be "
+                            "revalidated: "
+                         << storage::mempool_store_error_message(reconciled.error)
+                         << '\n';
+            return success;
+        }
         output << "Pending transactions after revalidation: "
-               << mempool_store.value().mempool().size() << '\n';
+               << opened_mempool.value().mempool().size() << '\n';
+        if (reconciled.detached != 0) {
+            output << "Detached transactions reconsidered: "
+                   << reconciled.detached << '\n'
+                   << "Detached transactions restored: "
+                   << reconciled.restored << '\n';
+        }
     }
     return success;
 }

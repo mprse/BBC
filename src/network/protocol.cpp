@@ -124,7 +124,8 @@ bool valid_payload_size(const MessageType type, const std::size_t size) {
         case MessageType::transaction_result:
             return size == crypto::hash256_size + 3;
         case MessageType::get_blocks:
-            return size == get_blocks_payload_size;
+            return size >= get_blocks_payload_minimum_size &&
+                size <= get_blocks_payload_maximum_size;
         case MessageType::blocks:
             return size >= blocks_payload_minimum_size &&
                 size <= maximum_frame_payload_size;

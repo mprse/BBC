@@ -284,6 +284,54 @@ TEST_CASE("mempool store survives reopen and revalidates its cache", "[mempool][
     CHECK(final_open.value().mempool().transactions().front().id() == second.id());
 }
 
+TEST_CASE("mempool store restores eligible transactions after a reorganization", "[mempool][storage][fork]") {
+    TemporaryDataDirectory directory{"bbc-stage8-1-mempool-reorg"};
+    const bbc::wallet::Wallet sender = deterministic_wallet();
+    const bbc::transaction::SignedTransaction transaction =
+        signed_transaction(sender, 100, 5, 0);
+    const bbc::transaction::SignedTransaction descendant =
+        signed_transaction(sender, 200, 6, 1);
+
+    bbc::chain::ChainState common_state;
+    REQUIRE(
+        bbc::chain::apply_block_state(
+            common_state,
+            state_only_block(1, sender.address())
+        ).has_value()
+    );
+    bbc::chain::ChainState confirmed_state = common_state;
+    const bbc::chain::Block detached_block = state_only_block(
+        2,
+        address_with_first_byte(0x44),
+        {transaction}
+    );
+    REQUIRE(
+        bbc::chain::apply_block_state(confirmed_state, detached_block).has_value()
+    );
+
+    bbc::storage::MempoolStoreResult store =
+        bbc::storage::MempoolStore::open(directory.path(), confirmed_state);
+    REQUIRE(store.has_value());
+    REQUIRE(store.value().add(descendant).has_value());
+    const bbc::storage::MempoolStoreReorganizationResult reconciled =
+        store.value().reconcile_reorganization(common_state, {detached_block});
+
+    REQUIRE(reconciled.has_value());
+    CHECK(reconciled.removed == 0);
+    CHECK(reconciled.detached == 1);
+    CHECK(reconciled.restored == 1);
+    REQUIRE(store.value().mempool().size() == 2);
+    CHECK(store.value().mempool().transactions()[0].id() == transaction.id());
+    CHECK(store.value().mempool().transactions()[1].id() == descendant.id());
+
+    bbc::storage::MempoolStoreResult reopened =
+        bbc::storage::MempoolStore::open(directory.path(), common_state);
+    REQUIRE(reopened.has_value());
+    REQUIRE(reopened.value().mempool().size() == 2);
+    CHECK(reopened.value().mempool().transactions()[0].id() == transaction.id());
+    CHECK(reopened.value().mempool().transactions()[1].id() == descendant.id());
+}
+
 TEST_CASE("mempool CLI creates a transaction-backed block candidate", "[application][mempool]") {
     TemporaryDataDirectory directory{"bbc-stage6-mempool-cli"};
     TemporaryFile transaction_file{"bbc-stage6-mempool-cli.bbctx"};

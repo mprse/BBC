@@ -8,7 +8,8 @@ scenario topology, handshake observation, ping checks, and reconnect tests.
 Stage 7.2 adds signed transaction submission and mempool convergence. Stage 7.3
 adds network profiles and scenario-controlled mining workers. Stage 7.4 adds
 staged actor startup, initial block synchronization, and restart-from-storage
-verification.
+verification. Stage 8.2 adds controlled network partitions, fork-aware
+synchronization, and reorganization assertions.
 
 ## Actor command
 
@@ -92,6 +93,8 @@ Supported methods are:
 - `dump`: return the status plus deterministic account entries;
 - `connect_peer`: start or retain an outbound P2P connection to the loopback
   endpoint supplied in `params`;
+- `disconnect_peer`: remove the outbound target supplied in `params`, close its
+  current session, and suppress reconnect until `connect_peer` adds it again;
 - `ping`: send a P2P `PING` to every handshaken peer and return its nonce;
 - `start_mining`: ask the miner's connected full node for a block template and
   begin bounded mining work; the scenario runner supplies `defer_work: true` to
@@ -165,7 +168,10 @@ Implemented steps are:
 - `{"wait": "actors_ready", "actors": ["node-a", "node-b"]}`;
 - `{"command": "connect_all"}`;
 - `{"command": "connect_all", "actors": ["node-a", "node-b"]}`;
+- `{"command": "connect", "from": "node-a", "to": "node-b"}`;
+- `{"command": "disconnect", "from": "node-a", "to": "node-b"}`;
 - `{"wait": "full_nodes_connected"}`;
+- `{"wait": "peer_counts", "values": {"node-a": 1, "node-b": 1}}`;
 - `{"command": "ping", "actors": ["node-a", "node-b"]}`;
 - `{"wait": "pongs"}`;
 - `{"command": "start_mining", "actors": ["miner-a", "miner-b"]}`;
@@ -174,7 +180,11 @@ Implemented steps are:
   ["miner-a", "miner-b"], "to": "receiver", "amount": 1000000000,
   "fee": 1000, "nonce": 0}`;
 - `{"wait": "transaction_propagated"}`;
+- `{"wait": "transaction_propagated", "actors": ["node-a"]}`;
+- `{"wait": "miner_height", "actors": ["miner-a"], "height": 2}`;
 - `{"wait": "sync_complete", "actors": ["node-c"], "height": 2}`;
+- `{"wait": "sync_state", "actors": ["node-a"], "height": 3,
+  "state": "up_to_date"}`;
 - `{"command": "restart", "actor": "node-b"}`;
 - `{"command": "dump", "actors": "all"}`.
 
@@ -185,16 +195,24 @@ Actor-scoped `start`, readiness, connection, and peer waits let a scenario keep
 a node offline while the initial chain advances. `sync_complete` waits for both
 the requested height and an explicit successful target-tip match.
 
-It implements `all_ready`, `same_tip`, `same_state`, exact `height`, exact
-`tip_transaction_count`, full-node `mempool_size`, `same_mempool`, per-actor
-`peer_count`, `mining_outcome`, `winner_reward`, and `payment_confirmed`
-assertions. `sync_state` can additionally require a full node's final state and
-download count. `payment_confirmed` verifies the dynamic balance outcome for either
+It implements `all_ready`, `same_tip`, `same_state`, exact `height`,
+`stored_block_count`, exact `tip_transaction_count`, full-node `mempool_size`,
+`same_mempool`, `last_transaction_in_mempool`, exact wallet `account` state,
+per-actor `peer_count`, `event_seen`, `mining_outcome`, `winner_reward`, and
+`payment_confirmed` assertions. `sync_state` can additionally require a full
+node's final state and download count. `payment_confirmed` verifies the dynamic balance outcome for either
 the same or different winners, including the height-2 fee, sender nonce, and
 total supply across all completed mining rounds. Restart preserves the
 actor data directory and resolved P2P port, allowing configured peers to prove
 automatic reconnect. Unsupported future steps and assertions fail explicitly
 rather than being ignored.
+
+`scenarios/fork-reorg.json` uses the explicit link controls to partition two
+full nodes after their shared height-1 block. Each side mines a competing
+height-2 block, one side advances to height 3, and the healed link discovers the
+common ancestor. The scenario checks the reorganization events, restored
+transaction propagation, side-block persistence, balances, nonces, and final
+state after restart.
 
 The scenario-level `start_mining` command is coordinated internally. The runner
 requests and validates every selected miner's template first, waits until all

@@ -210,6 +210,18 @@ public:
         return network_->connect(host, port, error);
     }
 
+    [[nodiscard]] bool disconnect_peer(
+        const std::string_view host,
+        const std::uint16_t port,
+        std::string& error
+    ) {
+        if (!network_.has_value()) {
+            error = "Actor does not provide a P2P service.";
+            return false;
+        }
+        return network_->disconnect(host, port, error);
+    }
+
     [[nodiscard]] std::optional<std::uint64_t> ping_peers() {
         if (!network_.has_value()) {
             return std::nullopt;
@@ -397,6 +409,7 @@ public:
                 {"tip", crypto::to_upper_hex(blockchain.tip().id())},
                 {"tip_transaction_count", blockchain.tip().transactions().size()},
                 {"block_count", blockchain.block_count()},
+                {"stored_block_count", blockchain.stored_block_count()},
                 {"account_count", blockchain.state().account_count()},
             };
             result["chain"]["mempool_size"] = mempool_store_.has_value()
@@ -824,15 +837,20 @@ private:
         const chain::Block block = std::move(decoded).value();
         const crypto::Hash256 id = block.id();
         if (!chain_store_.has_value()) {
+            bool extends_known_tip = false;
             bool extends_candidate = false;
             {
                 std::lock_guard lock{mining_mutex_};
+                extends_known_tip = block.height() > mining_known_height_ &&
+                    block.height() - 1 == mining_known_height_ &&
+                    block.previous_block_hash() == mining_known_tip_;
                 extends_candidate = mining_parent_.has_value() &&
                     mining_height_.has_value() &&
                     block.previous_block_hash() == *mining_parent_ &&
-                    block.height() == *mining_height_;
+                    block.height() == *mining_height_ &&
+                    block.height() > mining_known_height_;
             }
-            if (!extends_candidate ||
+            if ((!extends_known_tip && !extends_candidate) ||
                 block.chain_id() != core::network_parameters(config_.network_profile).chain_id ||
                 consensus::validate_proof_of_work(block) !=
                     consensus::ProofOfWorkError::none) {
@@ -858,15 +876,16 @@ private:
             return;
         }
         storage::ChainStoreAppendResult appended;
+        std::uint64_t active_tip_height = 0;
+        crypto::Hash256 active_tip_id{};
         {
             std::lock_guard lock{state_mutex_};
             appended = chain_store_->append(block);
-            if (appended.has_value() && mempool_store_.has_value()) {
-                const storage::MempoolStoreRevalidationResult revalidated =
-                    mempool_store_->revalidate(chain_store_->blockchain().state());
-                if (!revalidated.has_value()) {
-                    emit("mempool_revalidation_failed", {});
-                }
+            if (appended.has_value() &&
+                appended.chain_result.active_chain_changed) {
+                update_mempool_after_chain_change(appended.chain_result);
+                active_tip_height = chain_store_->blockchain().tip().height();
+                active_tip_id = chain_store_->blockchain().tip().id();
             }
         }
         if (!appended.has_value()) {
@@ -886,22 +905,71 @@ private:
             });
             return;
         }
+        if (!appended.chain_result.active_chain_changed) {
+            if (submission) {
+                send_block_result(peer_id, id, false, 1);
+            }
+            network_->broadcast(network::MessageType::block, block.serialize(), peer_id);
+            emit("block_stored", {
+                {"block_id", crypto::to_upper_hex(id)},
+                {"height", block.height()},
+                {"peer_id", peer_id},
+                {"status", "side_branch"},
+            });
+            emit("block_relayed", {{"block_id", crypto::to_upper_hex(id)}});
+            return;
+        }
         if (config_.has_role(ActorRole::miner)) {
             std::lock_guard lock{mining_mutex_};
-            mining_known_height_ = block.height();
-            mining_known_tip_ = id;
+            mining_known_height_ = active_tip_height;
+            mining_known_tip_ = active_tip_id;
         }
-        network_->update_tip(block.height(), id);
+        network_->update_tip(active_tip_height, active_tip_id);
         if (submission) {
             send_block_result(peer_id, id, true, 0);
         }
         network_->broadcast(network::MessageType::block, block.serialize(), peer_id);
-        emit("block_accepted", {
+        emit(appended.chain_result.reorganized ? "chain_reorganized" : "block_accepted", {
             {"block_id", crypto::to_upper_hex(id)},
             {"height", block.height()},
             {"peer_id", peer_id},
+            {"detached_blocks", appended.chain_result.detached_blocks.size()},
+            {"attached_blocks", appended.chain_result.attached_blocks.size()},
         });
         emit("block_relayed", {{"block_id", crypto::to_upper_hex(id)}});
+    }
+
+    void update_mempool_after_chain_change(const chain::AppendResult& appended) {
+        if (!mempool_store_.has_value()) {
+            return;
+        }
+        const storage::MempoolStoreReorganizationResult reconciled =
+            mempool_store_->reconcile_reorganization(
+                chain_store_->blockchain().state(),
+                appended.detached_blocks
+            );
+        if (!reconciled.has_value()) {
+            emit("mempool_revalidation_failed", {});
+            return;
+        }
+        if (reconciled.detached != 0) {
+            emit("mempool_reorg_completed", {
+                {"detached_transactions", reconciled.detached},
+                {"restored_transactions", reconciled.restored},
+            });
+        }
+        if (network_.has_value()) {
+            for (const transaction::SignedTransaction& transaction :
+                 reconciled.transactions_to_relay) {
+                network_->broadcast(
+                    network::MessageType::transaction,
+                    transaction.serialize()
+                );
+                emit("transaction_relayed_after_reorg", {
+                    {"transaction_id", crypto::to_upper_hex(transaction.id())},
+                });
+            }
+        }
     }
 
     void handle_block_result(const crypto::ByteView payload) {
@@ -990,6 +1058,7 @@ private:
                 sync_peer_ = peer_id;
                 sync_target_height_ = peer->remote_height;
                 sync_target_tip_ = peer->remote_tip;
+                sync_locator_tip_ = local_tip;
                 sync_received_blocks_ = 0;
                 sync_state_ = same_tip ? "up_to_date" : "diverged";
             }
@@ -1009,6 +1078,7 @@ private:
             sync_peer_ = peer_id;
             sync_target_height_ = peer->remote_height;
             sync_target_tip_ = peer->remote_tip;
+            sync_locator_tip_ = local_tip;
             sync_received_blocks_ = 0;
             sync_state_ = "syncing";
         }
@@ -1034,36 +1104,50 @@ private:
         if (!chain_store_.has_value() || !network_.has_value()) {
             return;
         }
-        std::uint64_t locator_height = 0;
-        crypto::Hash256 locator_id{};
-        {
-            std::lock_guard lock{state_mutex_};
-            locator_height = chain_store_->blockchain().tip().height();
-            locator_id = chain_store_->blockchain().tip().id();
-        }
-
+        crypto::Hash256 locator_tip{};
         std::uint64_t request_id = 0;
         {
             std::lock_guard lock{sync_mutex_};
             if (!sync_peer_.has_value() || *sync_peer_ != peer_id ||
-                pending_sync_request_.has_value() || sync_state_ != "syncing") {
+                pending_sync_request_.has_value() || sync_state_ != "syncing" ||
+                !sync_locator_tip_.has_value()) {
                 return;
             }
+            locator_tip = *sync_locator_tip_;
             request_id = next_sync_request_++;
             pending_sync_request_ = request_id;
         }
+
+        std::vector<std::pair<std::uint64_t, crypto::Hash256>> locator;
+        {
+            std::lock_guard lock{state_mutex_};
+            locator = chain_store_->blockchain().block_locator(
+                locator_tip,
+                network::maximum_block_locator_entries
+            );
+        }
+        if (locator.empty()) {
+            fail_sync("locator_tip_not_stored");
+            return;
+        }
         crypto::Bytes payload;
-        payload.reserve(network::get_blocks_payload_size);
+        payload.reserve(
+            8 + 2 + locator.size() * network::block_locator_entry_size + 2
+        );
         append_u64(payload, request_id);
-        append_u64(payload, locator_height);
-        payload.insert(payload.end(), locator_id.begin(), locator_id.end());
+        append_u16(payload, static_cast<std::uint16_t>(locator.size()));
+        for (const auto& [height, id] : locator) {
+            append_u64(payload, height);
+            payload.insert(payload.end(), id.begin(), id.end());
+        }
         append_u16(payload, network::maximum_blocks_per_sync_batch);
         if (!network_->send(peer_id, network::MessageType::get_blocks, payload)) {
             fail_sync("request_send_failed");
             return;
         }
         emit("sync_request_sent", {
-            {"locator_height", locator_height},
+            {"locator_count", locator.size()},
+            {"locator_height", locator.front().first},
             {"peer_id", peer_id},
             {"request_id", request_id},
         });
@@ -1074,28 +1158,50 @@ private:
         const crypto::ByteView payload
     ) {
         if (!chain_store_.has_value() || !network_.has_value() ||
-            payload.size() != network::get_blocks_payload_size) {
+            payload.size() < network::get_blocks_payload_minimum_size) {
             return;
         }
         const std::uint64_t request_id = read_u64(payload);
-        const std::uint64_t locator_height = read_u64(payload, 8);
-        crypto::Hash256 locator_id{};
-        std::ranges::copy(payload.subspan(16, locator_id.size()), locator_id.begin());
-        const std::uint16_t requested_count = read_u16(payload, 48);
+        const std::uint16_t locator_count = read_u16(payload, 8);
+        const std::size_t requested_count_offset =
+            10 + static_cast<std::size_t>(locator_count) *
+                network::block_locator_entry_size;
 
         crypto::Byte response_status = sync_status_ok;
         std::vector<crypto::Bytes> encoded_blocks;
-        if (requested_count == 0 ||
+        std::optional<std::uint64_t> matched_height;
+        if (locator_count == 0 ||
+            locator_count > network::maximum_block_locator_entries ||
+            requested_count_offset + sizeof(std::uint16_t) != payload.size()) {
+            response_status = sync_status_invalid_request;
+        } else if (const std::uint16_t requested_count =
+                       read_u16(payload, requested_count_offset);
+                   requested_count == 0 ||
             requested_count > network::maximum_blocks_per_sync_batch) {
             response_status = sync_status_invalid_request;
         } else {
             std::lock_guard lock{state_mutex_};
             const auto& blocks = chain_store_->blockchain().blocks();
-            if (locator_height >= blocks.size() ||
-                blocks[static_cast<std::size_t>(locator_height)].id() != locator_id) {
+            std::size_t offset = 10;
+            for (std::uint16_t index = 0; index < locator_count; ++index) {
+                const std::uint64_t height = read_u64(payload, offset);
+                crypto::Hash256 id{};
+                std::ranges::copy(
+                    payload.subspan(offset + sizeof(std::uint64_t), id.size()),
+                    id.begin()
+                );
+                offset += network::block_locator_entry_size;
+                if (height < blocks.size() &&
+                    blocks[static_cast<std::size_t>(height)].id() == id) {
+                    matched_height = height;
+                    break;
+                }
+            }
+            if (!matched_height.has_value()) {
                 response_status = sync_status_locator_not_found;
             } else {
-                const std::size_t first = static_cast<std::size_t>(locator_height) + 1;
+                const std::size_t first =
+                    static_cast<std::size_t>(*matched_height) + 1;
                 const std::size_t last = std::min(
                     blocks.size(),
                     first + static_cast<std::size_t>(requested_count)
@@ -1125,6 +1231,8 @@ private:
             {"peer_id", peer_id},
             {"request_id", request_id},
             {"status", response_status},
+            {"matched_height", matched_height.has_value()
+                ? nlohmann::json(*matched_height) : nlohmann::json(nullptr)},
         });
     }
 
@@ -1192,34 +1300,60 @@ private:
 
         for (const chain::Block& block : blocks) {
             storage::ChainStoreAppendResult appended;
+            bool already_stored = false;
+            std::uint64_t active_tip_height = 0;
+            crypto::Hash256 active_tip_id{};
             {
                 std::lock_guard lock{state_mutex_};
-                appended = chain_store_->append(block);
-                if (appended.has_value() && mempool_store_.has_value()) {
-                    const storage::MempoolStoreRevalidationResult revalidated =
-                        mempool_store_->revalidate(chain_store_->blockchain().state());
-                    if (!revalidated.has_value()) {
-                        emit("mempool_revalidation_failed", {});
-                    }
+                already_stored = chain_store_->blockchain().contains(block.id());
+                if (!already_stored) {
+                    appended = chain_store_->append(block);
+                }
+                if (!already_stored && appended.has_value() &&
+                    appended.chain_result.active_chain_changed) {
+                    update_mempool_after_chain_change(appended.chain_result);
+                    active_tip_height = chain_store_->blockchain().tip().height();
+                    active_tip_id = chain_store_->blockchain().tip().id();
                 }
             }
-            if (!appended.has_value()) {
+            if (!already_stored && !appended.has_value()) {
                 fail_sync(appended.storage_error == storage::ChainStoreError::none
                     ? chain::chain_error_message(appended.chain_result.error)
                     : storage::chain_store_error_message(appended.storage_error));
                 return;
             }
             const crypto::Hash256 block_id = block.id();
-            network_->update_tip(block.height(), block_id);
+            if (!already_stored && appended.chain_result.active_chain_changed) {
+                network_->update_tip(active_tip_height, active_tip_id);
+            }
+            if (!already_stored && appended.chain_result.reorganized) {
+                emit("chain_reorganized", {
+                    {"block_id", crypto::to_upper_hex(block_id)},
+                    {"height", block.height()},
+                    {"peer_id", peer_id},
+                    {"detached_blocks", appended.chain_result.detached_blocks.size()},
+                    {"attached_blocks", appended.chain_result.attached_blocks.size()},
+                    {"source", "synchronization"},
+                });
+            }
             {
                 std::lock_guard lock{sync_mutex_};
                 ++sync_received_blocks_;
             }
-            emit("sync_block_applied", {
+            emit(
+                already_stored ? "sync_block_known" :
+                    appended.chain_result.active_chain_changed
+                        ? "sync_block_applied" : "sync_block_stored",
+                {
                 {"block_id", crypto::to_upper_hex(block_id)},
                 {"height", block.height()},
                 {"peer_id", peer_id},
+                {"reorganized", !already_stored && appended.chain_result.reorganized},
             });
+        }
+        if (!blocks.empty()) {
+            std::lock_guard lock{sync_mutex_};
+            sync_locator_tip_ = blocks.back().id();
         }
 
         std::uint64_t local_height = 0;
@@ -1419,6 +1553,7 @@ private:
     std::optional<std::uint64_t> pending_sync_request_;
     std::optional<std::uint64_t> sync_target_height_;
     std::optional<crypto::Hash256> sync_target_tip_;
+    std::optional<crypto::Hash256> sync_locator_tip_;
     std::uint64_t sync_received_blocks_ = 0;
 };
 
@@ -1487,6 +1622,33 @@ nlohmann::json handle_request(
             {"id", id},
             {"ok", true},
             {"result", {{"connecting", true}}},
+        };
+    }
+    if (method == "disconnect_peer") {
+        if (!request.contains("params") || !request["params"].is_object()) {
+            return error_response(id, "invalid_params", "Missing peer endpoint.");
+        }
+        const nlohmann::json& params = request["params"];
+        if (!params.contains("host") || !params["host"].is_string() ||
+            !params.contains("port") || !params["port"].is_number_unsigned()) {
+            return error_response(id, "invalid_params", "Invalid peer endpoint.");
+        }
+        const std::uint64_t port = params["port"].get<std::uint64_t>();
+        if (port == 0 || port > 65'535) {
+            return error_response(id, "invalid_params", "Invalid peer port.");
+        }
+        std::string error;
+        if (!runtime.disconnect_peer(
+                params["host"].get_ref<const std::string&>(),
+                static_cast<std::uint16_t>(port),
+                error
+            )) {
+            return error_response(id, "disconnect_rejected", error);
+        }
+        return {
+            {"id", id},
+            {"ok", true},
+            {"result", {{"disconnecting", true}}},
         };
     }
     if (method == "ping") {

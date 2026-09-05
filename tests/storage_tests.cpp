@@ -39,6 +39,28 @@ bbc::chain::Block known_mined_block_one() {
     return std::move(result).value();
 }
 
+bbc::chain::Block mine_regtest_block(
+    const bbc::chain::Block& parent,
+    const bbc::wallet::Address& reward_recipient,
+    const std::uint64_t timestamp
+) {
+    bbc::chain::BlockResult candidate = bbc::chain::create_block({
+        parent.height() + 1,
+        parent.id(),
+        reward_recipient,
+        timestamp,
+        bbc::consensus::fixed_difficulty_target(2),
+        0,
+        {},
+        2,
+    });
+    REQUIRE(candidate.has_value());
+    bbc::consensus::MiningResult mined =
+        bbc::consensus::mine_block(candidate.value(), 1'000'000);
+    REQUIRE(mined.has_value());
+    return std::move(mined).value();
+}
+
 class TemporaryDataDirectory final {
 public:
     explicit TemporaryDataDirectory(const std::string_view name)
@@ -149,7 +171,7 @@ TEST_CASE("chain store append survives close and reopen", "[storage][state]") {
     const bbc::storage::ChainStoreAppendResult duplicate =
         initialized.value().append(known_mined_block_one());
     CHECK_FALSE(duplicate.has_value());
-    CHECK(duplicate.chain_result.error == bbc::chain::ChainError::unexpected_height);
+    CHECK(duplicate.chain_result.error == bbc::chain::ChainError::duplicate_block);
     CHECK(std::filesystem::file_size(initialized.value().blocks_path()) == appended_size);
 
     bbc::storage::ChainStoreResult reopened =
@@ -159,6 +181,50 @@ TEST_CASE("chain store append survives close and reopen", "[storage][state]") {
     CHECK(
         reopened.value().blockchain().state().account(reward_address()).balance ==
         bbc::chain::block_subsidy
+    );
+}
+
+TEST_CASE("side branches and fork choice survive chain store reopen", "[storage][fork]") {
+    TemporaryDataDirectory directory{"bbc-stage8-1-fork-reopen"};
+    bbc::storage::ChainStoreResult store =
+        bbc::storage::ChainStore::initialize(directory.path(), 2);
+    REQUIRE(store.has_value());
+    const bbc::chain::Block genesis = bbc::chain::genesis_block(2);
+    const bbc::wallet::Address miner_a = reward_address();
+    bbc::crypto::Hash256 miner_b_hash{};
+    miner_b_hash.front() = 0x55;
+    const bbc::wallet::Address miner_b =
+        bbc::wallet::Address::from_hash(miner_b_hash);
+    const bbc::chain::Block block_a1 =
+        mine_regtest_block(genesis, miner_a, 1);
+    const bbc::chain::Block block_b1 =
+        mine_regtest_block(genesis, miner_b, 2);
+    const bbc::chain::Block block_b2 =
+        mine_regtest_block(block_b1, miner_b, 3);
+
+    REQUIRE(store.value().append(block_a1).has_value());
+    const bbc::storage::ChainStoreAppendResult tied =
+        store.value().append(block_b1);
+    REQUIRE(tied.has_value());
+    CHECK_FALSE(tied.chain_result.active_chain_changed);
+    const bbc::storage::ChainStoreAppendResult heavier =
+        store.value().append(block_b2);
+    REQUIRE(heavier.has_value());
+    CHECK(heavier.chain_result.reorganized);
+
+    bbc::storage::ChainStoreResult reopened =
+        bbc::storage::ChainStore::open(directory.path(), 2);
+    REQUIRE(reopened.has_value());
+    const bbc::chain::Blockchain& blockchain = reopened.value().blockchain();
+    CHECK(blockchain.tip().id() == block_b2.id());
+    CHECK(blockchain.block_count() == 3);
+    CHECK(blockchain.stored_block_count() == 4);
+    CHECK_FALSE(blockchain.is_on_active_chain(block_a1.id()));
+    CHECK(blockchain.is_on_active_chain(block_b1.id()));
+    CHECK(blockchain.state().account(miner_a).balance == 0);
+    CHECK(
+        blockchain.state().account(miner_b).balance ==
+        2 * bbc::chain::block_subsidy
     );
 }
 

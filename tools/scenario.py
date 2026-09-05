@@ -86,6 +86,7 @@ class Actor:
     control_port: int | None = None
     p2p_port: int | None = None
     ready: bool = False
+    observed_events: set[str] = field(default_factory=set)
     events: deque[str] = field(
         default_factory=lambda: deque(maxlen=PANEL_EVENT_ROWS)
     )
@@ -141,6 +142,22 @@ class Display:
                 f"[BLOCK ACCEPTED] height={height} id={short_id} "
                 f"peer={details.get('peer_id', '?')}"
             )
+        if event == "block_stored":
+            return f"[SIDE BLOCK STORED] height={height} id={short_id}"
+        if event == "chain_reorganized":
+            return (
+                f"[CHAIN REORG] height={height} id={short_id} "
+                f"detached={details.get('detached_blocks', '?')} "
+                f"attached={details.get('attached_blocks', '?')}"
+            )
+        if event == "mempool_reorg_completed":
+            return (
+                "[MEMPOOL REORG] "
+                f"detached={details.get('detached_transactions', '?')} "
+                f"restored={details.get('restored_transactions', '?')}"
+            )
+        if event == "sync_block_stored":
+            return f"[SYNC SIDE BLOCK] height={height} id={short_id}"
         if event == "block_rejected":
             return f"[BLOCK REJECTED] id={short_id} reason={details.get('reason', '?')}"
         if event == "mining_accepted":
@@ -422,7 +439,10 @@ def process_event(actor: Actor, line: str, display: Display) -> None:
         message = json.loads(line)
     except json.JSONDecodeError:
         return
-    if message.get("event") == "ready":
+    event = message.get("event")
+    if isinstance(event, str):
+        actor.observed_events.add(event)
+    if event == "ready":
         details = message.get("details", {})
         port = details.get("control_port")
         if isinstance(port, int) and 0 < port <= 65_535:
@@ -621,6 +641,39 @@ def wait_for_peer_connections(
         time.sleep(0.05)
 
 
+def wait_for_peer_counts(
+    expected: dict[str, int],
+    actors: list[Actor],
+    output_queue: queue.Queue[tuple[Actor, str]],
+    display: Display,
+    timeout_seconds: float,
+) -> None:
+    by_name = {actor.name: actor for actor in actors}
+    if not expected or any(
+        name not in by_name or not isinstance(count, int) or count < 0
+        for name, count in expected.items()
+    ):
+        raise ScenarioError("peer_counts requires known actors and nonnegative counts.")
+    deadline = time.monotonic() + timeout_seconds
+    request_id = 250_000
+    latest: dict[str, int] = {}
+    while True:
+        drain_events(output_queue, display)
+        for name in expected:
+            status = control_request(
+                by_name[name], request_id, "status", timeout_seconds
+            )
+            request_id += 1
+            latest[name] = status["p2p"]["handshake_complete_count"]
+        if latest == expected:
+            return
+        if time.monotonic() >= deadline:
+            raise ScenarioError(
+                f"Timed out waiting for peer counts: {latest}, expected {expected}."
+            )
+        time.sleep(0.05)
+
+
 def wait_for_pongs(
     expected: dict[str, int],
     actors: list[Actor],
@@ -652,16 +705,13 @@ def wait_for_pongs(
 
 
 def wait_for_mining(
-    actors: list[Actor],
+    miners: list[Actor],
+    full_nodes: list[Actor],
     output_queue: queue.Queue[tuple[Actor, str]],
     display: Display,
     timeout_seconds: float,
     height: int,
 ) -> str:
-    miners = [actor for actor in actors if actor.ready and "miner" in actor.roles]
-    full_nodes = [
-        actor for actor in actors if actor.ready and "full_node" in actor.roles
-    ]
     deadline = time.monotonic() + timeout_seconds
     request_id = 400_000
     while True:
@@ -720,6 +770,31 @@ def wait_for_miners_ready(
         if time.monotonic() >= deadline:
             raise ScenarioError(
                 f"Timed out preparing the mining race: states={states}."
+            )
+        time.sleep(0.02)
+
+
+def wait_for_miner_height(
+    miners: list[Actor],
+    output_queue: queue.Queue[tuple[Actor, str]],
+    display: Display,
+    timeout_seconds: float,
+    height: int,
+) -> None:
+    deadline = time.monotonic() + timeout_seconds
+    request_id = 475_000
+    latest: dict[str, int] = {}
+    while True:
+        drain_events(output_queue, display)
+        for actor in miners:
+            status = control_request(actor, request_id, "status", timeout_seconds)
+            request_id += 1
+            latest[actor.name] = status["mining"]["known_height"]
+        if latest and all(value == height for value in latest.values()):
+            return
+        if time.monotonic() >= deadline:
+            raise ScenarioError(
+                f"Timed out waiting for miner height {height}: {latest}."
             )
         time.sleep(0.02)
 
@@ -792,6 +867,39 @@ def wait_for_sync(
         time.sleep(0.02)
 
 
+def wait_for_sync_state(
+    selected: list[Actor],
+    output_queue: queue.Queue[tuple[Actor, str]],
+    display: Display,
+    timeout_seconds: float,
+    height: int,
+    expected_state: str,
+) -> None:
+    deadline = time.monotonic() + timeout_seconds
+    request_id = 575_000
+    latest: dict[str, Any] = {}
+    while True:
+        drain_events(output_queue, display)
+        for actor in selected:
+            status = control_request(actor, request_id, "status", timeout_seconds)
+            request_id += 1
+            latest[actor.name] = {
+                "height": status["chain"]["height"],
+                "sync": status["sync"]["state"],
+            }
+        if latest and all(
+            value["height"] == height and value["sync"] == expected_state
+            for value in latest.values()
+        ):
+            return
+        if time.monotonic() >= deadline:
+            raise ScenarioError(
+                f"Timed out waiting for synchronization state {expected_state}: "
+                f"{latest}."
+            )
+        time.sleep(0.02)
+
+
 def run_steps(
     steps: Any,
     actors: list[Actor],
@@ -849,6 +957,29 @@ def run_steps(
             request_id = connect_scenario_peers(
                 actors, selected, timeout_seconds, request_id
             )
+        elif step.get("command") in {"connect", "disconnect"}:
+            source_name = step.get("from")
+            target_name = step.get("to")
+            if not isinstance(source_name, str) or not isinstance(target_name, str):
+                raise ScenarioError("connect and disconnect require from and to actors.")
+            source = actor_selection([source_name], actors)[0]
+            target = actor_selection([target_name], actors)[0]
+            if not source.ready or not target.ready or target.p2p_port is None:
+                raise ScenarioError("Both link actors must be ready full-node peers.")
+            method = (
+                "connect_peer" if step["command"] == "connect" else "disconnect_peer"
+            )
+            display.controller(
+                f"{step['command'].capitalize()}ing {source.name} and {target.name}"
+            )
+            control_request(
+                source,
+                request_id,
+                method,
+                timeout_seconds,
+                {"host": "127.0.0.1", "port": target.p2p_port},
+            )
+            request_id += 1
         elif step.get("wait") == "full_nodes_connected":
             selected = actor_selection(step.get("actors", "all"), actors)
             display.controller("Waiting for P2P handshakes")
@@ -856,6 +987,15 @@ def run_steps(
                 actors, selected, output_queue, display, timeout_seconds
             )
             display.controller("Full nodes are connected")
+        elif step.get("wait") == "peer_counts":
+            expected = step.get("values")
+            if not isinstance(expected, dict):
+                raise ScenarioError("peer_counts requires a values object.")
+            display.controller("Waiting for requested P2P topology")
+            wait_for_peer_counts(
+                expected, actors, output_queue, display, timeout_seconds
+            )
+            display.controller("Requested P2P topology is active")
         elif step.get("command") == "ping":
             selected = actor_selection(step.get("actors"), actors)
             display.controller("Sending PING messages")
@@ -914,13 +1054,54 @@ def run_steps(
                 for future in futures:
                     future.result()
             request_id += len(selected)
+        elif step.get("wait") == "miner_height":
+            selected = actor_selection(step.get("actors"), actors)
+            height = step.get("height")
+            if (
+                not selected
+                or any("miner" not in actor.roles for actor in selected)
+                or not isinstance(height, int)
+                or height < 0
+            ):
+                raise ScenarioError("miner_height has invalid parameters.")
+            display.controller(f"Waiting for miners to learn height {height}")
+            wait_for_miner_height(
+                selected, output_queue, display, timeout_seconds, height
+            )
+            display.controller(f"Selected miners know height {height}")
         elif step.get("wait") == "mining_complete":
             height = step.get("height")
             if not isinstance(height, int) or height < 1:
                 raise ScenarioError("mining_complete requires a positive height.")
+            selected_miners = actor_selection(
+                step.get("miners", [
+                    actor.name for actor in actors
+                    if actor.ready and "miner" in actor.roles
+                ]),
+                actors,
+            )
+            selected_full_nodes = actor_selection(
+                step.get("full_nodes", [
+                    actor.name for actor in actors
+                    if actor.ready and "full_node" in actor.roles
+                ]),
+                actors,
+            )
+            if (
+                not selected_miners
+                or not selected_full_nodes
+                or any("miner" not in actor.roles for actor in selected_miners)
+                or any("full_node" not in actor.roles for actor in selected_full_nodes)
+            ):
+                raise ScenarioError("mining_complete has invalid actor selections.")
             display.controller(f"Waiting for block {height}")
             winner = wait_for_mining(
-                actors, output_queue, display, timeout_seconds, height
+                selected_miners,
+                selected_full_nodes,
+                output_queue,
+                display,
+                timeout_seconds,
+                height,
             )
             scenario_state["mining_winners"].append(winner)
             display.controller(f"Block {height} accepted; losing miners stopped")
@@ -986,11 +1167,17 @@ def run_steps(
             if submitted_transaction is None:
                 raise ScenarioError("No transaction was submitted.")
             display.controller("Waiting for transaction propagation")
-            wait_for_transaction_propagation(
-                [
-                    actor for actor in actors
+            selected_full_nodes = actor_selection(
+                step.get("actors", [
+                    actor.name for actor in actors
                     if actor.ready and "full_node" in actor.roles
-                ],
+                ]),
+                actors,
+            )
+            if any("full_node" not in actor.roles for actor in selected_full_nodes):
+                raise ScenarioError("transaction_propagated may target only full nodes.")
+            wait_for_transaction_propagation(
+                selected_full_nodes,
                 submitted_transaction[0],
                 submitted_transaction[1],
                 output_queue,
@@ -1010,6 +1197,27 @@ def run_steps(
                 selected, output_queue, display, timeout_seconds, height
             )
             display.controller("Selected full nodes are synchronized")
+        elif step.get("wait") == "sync_state":
+            selected = actor_selection(step.get("actors"), actors)
+            height = step.get("height")
+            state = step.get("state")
+            if (
+                any("full_node" not in actor.roles for actor in selected)
+                or not isinstance(height, int)
+                or height < 0
+                or not isinstance(state, str)
+            ):
+                raise ScenarioError("sync_state has invalid parameters.")
+            display.controller(f"Waiting for synchronization state {state}")
+            wait_for_sync_state(
+                selected,
+                output_queue,
+                display,
+                timeout_seconds,
+                height,
+                state,
+            )
+            display.controller(f"Selected full nodes report {state}")
         elif step.get("command") == "restart":
             name = step.get("actor")
             if not isinstance(name, str):
@@ -1094,6 +1302,17 @@ def run_assertions(
                         f"Assertion failed: {actor.name} height is {actual}, "
                         f"expected {expected['value']}."
                     )
+        elif "stored_block_count" in assertion:
+            expected = assertion["stored_block_count"]
+            if not isinstance(expected, dict) or not isinstance(expected.get("value"), int):
+                raise ScenarioError("stored_block_count assertion is invalid.")
+            for actor in actor_selection(expected.get("actors"), actors):
+                actual = dumps[actor.name]["chain"]["stored_block_count"]
+                if actual != expected["value"]:
+                    raise ScenarioError(
+                        f"Assertion failed: {actor.name} stores {actual} blocks, "
+                        f"expected {expected['value']}."
+                    )
         elif "mempool_size" in assertion:
             expected = assertion["mempool_size"]
             if not isinstance(expected, int) or expected < 0:
@@ -1130,6 +1349,60 @@ def run_assertions(
             ]
             if not mempools or any(value != mempools[0] for value in mempools[1:]):
                 raise ScenarioError(f"Full-node mempools differ: {mempools}.")
+        elif "last_transaction_in_mempool" in assertion:
+            selected = actor_selection(
+                assertion["last_transaction_in_mempool"], actors
+            )
+            transactions = scenario_state["transactions"]
+            if not transactions:
+                raise ScenarioError("No submitted transaction is available.")
+            transaction_id = transactions[-1]["id"]
+            for actor in selected:
+                pending = dumps[actor.name]["chain"]["mempool_transactions"]
+                if transaction_id not in pending:
+                    raise ScenarioError(
+                        f"Transaction {transaction_id} is absent from {actor.name} mempool."
+                    )
+        elif "account" in assertion:
+            expected = assertion["account"]
+            if (
+                not isinstance(expected, dict)
+                or not isinstance(expected.get("wallet"), str)
+                or not isinstance(expected.get("balance"), int)
+                or not isinstance(expected.get("next_nonce"), int)
+            ):
+                raise ScenarioError("account assertion is invalid.")
+            wallet_actor = actor_selection([expected["wallet"]], actors)[0]
+            address = dumps[wallet_actor.name].get("wallet_address")
+            if not isinstance(address, str):
+                raise ScenarioError(f"Actor {wallet_actor.name} has no wallet address.")
+            for full_node in actor_selection(expected.get("full_nodes"), actors):
+                accounts = {
+                    account["address"]: account
+                    for account in dumps[full_node.name]["chain"]["accounts"]
+                }
+                actual = accounts.get(address, {"balance": 0, "next_nonce": 0})
+                if (
+                    actual["balance"] != expected["balance"]
+                    or actual["next_nonce"] != expected["next_nonce"]
+                ):
+                    raise ScenarioError(
+                        f"Assertion failed: {full_node.name} account for "
+                        f"{wallet_actor.name} is {actual}."
+                    )
+        elif "event_seen" in assertion:
+            expected = assertion["event_seen"]
+            if (
+                not isinstance(expected, dict)
+                or not isinstance(expected.get("actor"), str)
+                or not isinstance(expected.get("event"), str)
+            ):
+                raise ScenarioError("event_seen assertion is invalid.")
+            actor = actor_selection([expected["actor"]], actors)[0]
+            if expected["event"] not in actor.observed_events:
+                raise ScenarioError(
+                    f"Actor {actor.name} did not emit {expected['event']}."
+                )
         elif "peer_count" in assertion:
             expected = assertion["peer_count"]
             if (

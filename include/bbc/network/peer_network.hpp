@@ -75,6 +75,11 @@ public:
         std::uint16_t port,
         std::string& error
     );
+    [[nodiscard]] bool disconnect(
+        std::string_view host,
+        std::uint16_t port,
+        std::string& error
+    );
     [[nodiscard]] std::uint64_t ping_all();
     void update_tip(std::uint64_t height, const crypto::Hash256& block_id);
     [[nodiscard]] bool send(

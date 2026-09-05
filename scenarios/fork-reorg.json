@@ -1,0 +1,142 @@
+{
+  "schema_version": 1,
+  "name": "fork-reorg",
+  "network": {},
+  "actors": [
+    {
+      "name": "full-a",
+      "roles": ["full_node"],
+      "control": "127.0.0.1:0",
+      "p2p": "127.0.0.1:0",
+      "peers": ["full-b"]
+    },
+    {
+      "name": "full-b",
+      "roles": ["full_node"],
+      "control": "127.0.0.1:0",
+      "p2p": "127.0.0.1:0"
+    },
+    {
+      "name": "miner-a",
+      "roles": ["wallet", "miner"],
+      "control": "127.0.0.1:0",
+      "mining_source": "full-a"
+    },
+    {
+      "name": "miner-b",
+      "roles": ["wallet", "miner"],
+      "control": "127.0.0.1:0",
+      "mining_source": "full-b"
+    },
+    {
+      "name": "receiver",
+      "roles": ["wallet"],
+      "control": "127.0.0.1:0"
+    }
+  ],
+  "steps": [
+    {"command": "start_all"},
+    {"wait": "all_ready"},
+    {"command": "connect_all"},
+    {
+      "wait": "peer_counts",
+      "values": {"full-a": 2, "full-b": 2, "miner-a": 1, "miner-b": 1}
+    },
+    {"command": "start_mining", "actors": ["miner-a"]},
+    {
+      "wait": "mining_complete",
+      "height": 1,
+      "miners": ["miner-a"],
+      "full_nodes": ["full-a", "full-b"]
+    },
+    {"wait": "miner_height", "actors": ["miner-b"], "height": 1},
+    {"command": "disconnect", "from": "full-a", "to": "full-b"},
+    {"wait": "peer_counts", "values": {"full-a": 1, "full-b": 1}},
+    {
+      "command": "submit_transaction",
+      "from": "miner-a",
+      "to": "receiver",
+      "amount": 1000000000,
+      "fee": 1000,
+      "nonce": 0
+    },
+    {"wait": "transaction_propagated", "actors": ["full-a"]},
+    {"command": "start_mining", "actors": ["miner-a"]},
+    {
+      "wait": "mining_complete",
+      "height": 2,
+      "miners": ["miner-a"],
+      "full_nodes": ["full-a"]
+    },
+    {"command": "start_mining", "actors": ["miner-b"]},
+    {
+      "wait": "mining_complete",
+      "height": 2,
+      "miners": ["miner-b"],
+      "full_nodes": ["full-b"]
+    },
+    {"command": "start_mining", "actors": ["miner-b"]},
+    {
+      "wait": "mining_complete",
+      "height": 3,
+      "miners": ["miner-b"],
+      "full_nodes": ["full-b"]
+    },
+    {"command": "connect", "from": "full-a", "to": "full-b"},
+    {"wait": "peer_counts", "values": {"full-a": 2, "full-b": 2}},
+    {"wait": "sync_complete", "actors": ["full-a"], "height": 3},
+    {"wait": "transaction_propagated", "actors": ["full-a", "full-b"]},
+    {"command": "restart", "actor": "full-a"},
+    {"command": "connect", "from": "full-a", "to": "full-b"},
+    {"wait": "peer_counts", "values": {"full-a": 2, "full-b": 2}},
+    {
+      "wait": "sync_state",
+      "actors": ["full-a"],
+      "height": 3,
+      "state": "up_to_date"
+    },
+    {"command": "dump", "actors": "all"}
+  ],
+  "assertions": [
+    {"all_ready": true},
+    {"same_tip": ["full-a", "full-b"]},
+    {"same_state": ["full-a", "full-b"]},
+    {"height": {"actors": ["full-a", "full-b"], "value": 3}},
+    {"stored_block_count": {"actors": ["full-a"], "value": 5}},
+    {"stored_block_count": {"actors": ["full-b"], "value": 4}},
+    {"tip_transaction_count": {"actors": ["full-a", "full-b"], "value": 0}},
+    {"mempool_size": 1},
+    {"same_mempool": ["full-a", "full-b"]},
+    {"last_transaction_in_mempool": ["full-a", "full-b"]},
+    {
+      "account": {
+        "wallet": "miner-a",
+        "full_nodes": ["full-a", "full-b"],
+        "balance": 5000000000,
+        "next_nonce": 0
+      }
+    },
+    {
+      "account": {
+        "wallet": "miner-b",
+        "full_nodes": ["full-a", "full-b"],
+        "balance": 10000000000,
+        "next_nonce": 0
+      }
+    },
+    {
+      "account": {
+        "wallet": "receiver",
+        "full_nodes": ["full-a", "full-b"],
+        "balance": 0,
+        "next_nonce": 0
+      }
+    },
+    {"peer_count": {"actor": "full-a", "value": 2}},
+    {"peer_count": {"actor": "full-b", "value": 2}},
+    {"sync_state": {"actor": "full-a", "value": "up_to_date", "received_blocks": 0}},
+    {"event_seen": {"actor": "full-a", "event": "chain_reorganized"}},
+    {"event_seen": {"actor": "full-a", "event": "mempool_reorg_completed"}},
+    {"event_seen": {"actor": "full-a", "event": "transaction_relayed_after_reorg"}}
+  ]
+}

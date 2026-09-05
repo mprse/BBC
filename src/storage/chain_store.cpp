@@ -148,6 +148,8 @@ bool bind_blob(sqlite3_stmt* statement, const int index, const Range& value) {
 bool insert_block(
     sqlite3_stmt* statement,
     const chain::Block& block,
+    const std::uint64_t cumulative_work,
+    const bool active,
     const std::pair<std::uint64_t, std::uint64_t>& location
 ) {
     if (location.first > static_cast<std::uint64_t>(
@@ -159,17 +161,20 @@ bool insert_block(
         return false;
     }
     const auto height = encode_u64_be(block.height());
-    if (!bind_blob(statement, 1, height) ||
-        !bind_blob(statement, 2, block.id()) ||
+    const auto encoded_work = encode_u64_be(cumulative_work);
+    if (!bind_blob(statement, 1, block.id()) ||
+        !bind_blob(statement, 2, height) ||
         !bind_blob(statement, 3, block.previous_block_hash()) ||
+        !bind_blob(statement, 4, encoded_work) ||
+        sqlite3_bind_int(statement, 5, active ? 1 : 0) != SQLITE_OK ||
         sqlite3_bind_int64(
             statement,
-            4,
+            6,
             static_cast<sqlite3_int64>(location.first)
         ) != SQLITE_OK ||
         sqlite3_bind_int64(
             statement,
-            5,
+            7,
             static_cast<sqlite3_int64>(location.second)
         ) != SQLITE_OK ||
         sqlite3_step(statement) != SQLITE_DONE) {
@@ -419,7 +424,7 @@ ChainStoreAppendResult ChainStore::append(chain::Block block) {
 
     blockchain_ = std::move(next_store.blockchain_);
     records_ = std::move(next_store.records_);
-    return {};
+    return {ChainStoreError::none, appended};
 }
 
 ChainStoreError ChainStore::rebuild_database() const {
@@ -439,31 +444,34 @@ ChainStoreError ChainStore::rebuild_database() const {
     Database database{raw_database};
     if (!execute(database.get(), "PRAGMA journal_mode=DELETE;") ||
         !execute(database.get(), "PRAGMA synchronous=FULL;") ||
-        !execute(database.get(), "PRAGMA user_version=1;") ||
+        !execute(database.get(), "BEGIN IMMEDIATE;") ||
         !execute(
             database.get(),
-            "CREATE TABLE IF NOT EXISTS blocks("
-            "height BLOB PRIMARY KEY NOT NULL CHECK(length(height)=8),"
-            "hash BLOB UNIQUE NOT NULL CHECK(length(hash)=32),"
+            "DROP TABLE IF EXISTS blocks;"
+            "DROP TABLE IF EXISTS accounts;"
+            "DROP TABLE IF EXISTS metadata;"
+            "CREATE TABLE blocks("
+            "hash BLOB PRIMARY KEY NOT NULL CHECK(length(hash)=32),"
+            "height BLOB NOT NULL CHECK(length(height)=8),"
             "parent_hash BLOB NOT NULL CHECK(length(parent_hash)=32),"
+            "cumulative_work BLOB NOT NULL CHECK(length(cumulative_work)=8),"
+            "active INTEGER NOT NULL CHECK(active IN(0,1)),"
             "file_offset INTEGER NOT NULL CHECK(file_offset>=0),"
             "record_size INTEGER NOT NULL CHECK(record_size>0)"
             ") WITHOUT ROWID;"
-            "CREATE TABLE IF NOT EXISTS accounts("
+            "CREATE INDEX blocks_by_height ON blocks(height);"
+            "CREATE INDEX active_blocks_by_height ON blocks(height) WHERE active=1;"
+            "CREATE TABLE accounts("
             "address BLOB PRIMARY KEY NOT NULL CHECK(length(address)=32),"
             "balance BLOB NOT NULL CHECK(length(balance)=8),"
             "next_nonce BLOB NOT NULL CHECK(length(next_nonce)=8)"
             ") WITHOUT ROWID;"
-            "CREATE TABLE IF NOT EXISTS metadata("
+            "CREATE TABLE metadata("
             "id INTEGER PRIMARY KEY CHECK(id=1),"
             "tip_height BLOB NOT NULL CHECK(length(tip_height)=8),"
             "tip_hash BLOB NOT NULL CHECK(length(tip_hash)=32)"
             ");"
-        ) ||
-        !execute(database.get(), "BEGIN IMMEDIATE;") ||
-        !execute(
-            database.get(),
-            "DELETE FROM blocks;DELETE FROM accounts;DELETE FROM metadata;"
+            "PRAGMA user_version=2;"
         )) {
         execute(database.get(), "ROLLBACK;");
         return ChainStoreError::database_error;
@@ -471,8 +479,8 @@ ChainStoreError ChainStore::rebuild_database() const {
 
     std::unique_ptr<Statement> block_statement = prepare(
         database.get(),
-        "INSERT INTO blocks(height,hash,parent_hash,file_offset,record_size)"
-        " VALUES(?1,?2,?3,?4,?5);"
+        "INSERT INTO blocks(hash,height,parent_hash,cumulative_work,active,"
+        "file_offset,record_size) VALUES(?1,?2,?3,?4,?5,?6,?7);"
     );
     std::unique_ptr<Statement> account_statement = prepare(
         database.get(),
@@ -487,13 +495,22 @@ ChainStoreError ChainStore::rebuild_database() const {
         return ChainStoreError::database_error;
     }
 
-    const auto& blocks = blockchain_.blocks();
+    const auto& blocks = blockchain_.stored_blocks();
     if (blocks.size() != records_.size()) {
         execute(database.get(), "ROLLBACK;");
         return ChainStoreError::database_error;
     }
     for (std::size_t index = 0; index < blocks.size(); ++index) {
-        if (!insert_block(block_statement->get(), blocks[index], records_[index])) {
+        const std::optional<std::uint64_t> work =
+            blockchain_.cumulative_work(blocks[index].id());
+        if (!work.has_value() ||
+            !insert_block(
+                block_statement->get(),
+                blocks[index],
+                *work,
+                blockchain_.is_on_active_chain(blocks[index].id()),
+                records_[index]
+            )) {
             execute(database.get(), "ROLLBACK;");
             return ChainStoreError::database_error;
         }

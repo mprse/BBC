@@ -7,6 +7,7 @@
 #include <filesystem>
 #include <string_view>
 #include <variant>
+#include <vector>
 
 namespace bbc::storage {
 
@@ -35,6 +36,18 @@ struct MempoolStoreRevalidationResult {
     }
 };
 
+struct MempoolStoreReorganizationResult {
+    MempoolStoreError error = MempoolStoreError::none;
+    std::size_t removed = 0;
+    std::size_t detached = 0;
+    std::size_t restored = 0;
+    std::vector<transaction::SignedTransaction> transactions_to_relay;
+
+    [[nodiscard]] bool has_value() const noexcept {
+        return error == MempoolStoreError::none;
+    }
+};
+
 class MempoolStoreResult;
 
 class MempoolStore final {
@@ -53,6 +66,10 @@ public:
     );
     [[nodiscard]] MempoolStoreRevalidationResult revalidate(
         const chain::ChainState& chain_state
+    );
+    [[nodiscard]] MempoolStoreReorganizationResult reconcile_reorganization(
+        const chain::ChainState& chain_state,
+        const std::vector<chain::Block>& detached_blocks
     );
 
 private:

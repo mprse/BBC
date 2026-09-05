@@ -52,6 +52,29 @@ bbc::chain::Block known_mined_block_one() {
     return std::move(result).value();
 }
 
+bbc::chain::Block mine_regtest_block(
+    const bbc::chain::Block& parent,
+    const bbc::wallet::Address& reward_recipient,
+    const std::uint64_t timestamp,
+    std::vector<bbc::transaction::SignedTransaction> transactions = {}
+) {
+    bbc::chain::BlockResult candidate = bbc::chain::create_block({
+        parent.height() + 1,
+        parent.id(),
+        reward_recipient,
+        timestamp,
+        bbc::consensus::fixed_difficulty_target(2),
+        0,
+        std::move(transactions),
+        2,
+    });
+    REQUIRE(candidate.has_value());
+    bbc::consensus::MiningResult mined =
+        bbc::consensus::mine_block(candidate.value(), 1'000'000);
+    REQUIRE(mined.has_value());
+    return std::move(mined).value();
+}
+
 bbc::chain::Block state_only_block(
     const std::uint64_t height,
     const bbc::wallet::Address& reward_recipient,
@@ -167,6 +190,158 @@ TEST_CASE("appending a mined reward-only block creates miner funds", "[chain][st
         bbc::chain::block_subsidy
     );
     CHECK(blockchain.state().account(*block.reward_recipient()).next_nonce == 0);
+}
+
+TEST_CASE("a strictly heavier branch reorganizes the active chain", "[chain][fork]") {
+    const bbc::chain::Block genesis = bbc::chain::genesis_block(2);
+    const bbc::wallet::Address miner_a = address_with_first_byte(0xA1);
+    const bbc::wallet::Address miner_b = address_with_first_byte(0xB1);
+    const bbc::chain::Block block_a1 =
+        mine_regtest_block(genesis, miner_a, 1);
+    const bbc::chain::Block block_b1 =
+        mine_regtest_block(genesis, miner_b, 2);
+    const bbc::chain::Block block_b2 =
+        mine_regtest_block(block_b1, miner_b, 3);
+    bbc::chain::Blockchain blockchain{2};
+
+    const bbc::chain::AppendResult first = blockchain.append(block_a1);
+    REQUIRE(first.has_value());
+    CHECK(first.active_chain_changed);
+    CHECK_FALSE(first.reorganized);
+
+    const bbc::chain::AppendResult tied = blockchain.append(block_b1);
+    REQUIRE(tied.has_value());
+    CHECK_FALSE(tied.active_chain_changed);
+    CHECK(blockchain.tip().id() == block_a1.id());
+    CHECK(blockchain.block_count() == 2);
+    CHECK(blockchain.stored_block_count() == 3);
+    CHECK(blockchain.is_on_active_chain(block_a1.id()));
+    CHECK_FALSE(blockchain.is_on_active_chain(block_b1.id()));
+
+    const bbc::chain::AppendResult heavier = blockchain.append(block_b2);
+    REQUIRE(heavier.has_value());
+    CHECK(heavier.active_chain_changed);
+    CHECK(heavier.reorganized);
+    REQUIRE(heavier.detached_blocks.size() == 1);
+    CHECK(heavier.detached_blocks.front().id() == block_a1.id());
+    REQUIRE(heavier.attached_blocks.size() == 2);
+    CHECK(heavier.attached_blocks[0].id() == block_b1.id());
+    CHECK(heavier.attached_blocks[1].id() == block_b2.id());
+    CHECK(blockchain.tip().id() == block_b2.id());
+    CHECK(blockchain.block_count() == 3);
+    CHECK(blockchain.stored_block_count() == 4);
+    CHECK_FALSE(blockchain.is_on_active_chain(block_a1.id()));
+    CHECK(blockchain.is_on_active_chain(block_b1.id()));
+    CHECK(blockchain.is_on_active_chain(block_b2.id()));
+    CHECK(blockchain.state().account(miner_a).balance == 0);
+    CHECK(
+        blockchain.state().account(miner_b).balance ==
+        2 * bbc::chain::block_subsidy
+    );
+}
+
+TEST_CASE("block locators follow the requested branch to Genesis", "[chain][fork][sync]") {
+    const bbc::chain::Block genesis = bbc::chain::genesis_block(2);
+    const bbc::chain::Block block_a1 = mine_regtest_block(
+        genesis,
+        address_with_first_byte(0xA4),
+        1
+    );
+    const bbc::chain::Block block_b1 = mine_regtest_block(
+        genesis,
+        address_with_first_byte(0xB4),
+        2
+    );
+    const bbc::chain::Block block_b2 = mine_regtest_block(
+        block_b1,
+        address_with_first_byte(0xB4),
+        3
+    );
+    bbc::chain::Blockchain blockchain{2};
+    REQUIRE(blockchain.append(block_a1).has_value());
+    REQUIRE(blockchain.append(block_b1).has_value());
+    REQUIRE(blockchain.append(block_b2).has_value());
+
+    const auto locator = blockchain.block_locator(block_b2.id(), 4);
+
+    REQUIRE(locator.size() == 3);
+    CHECK(locator[0] == std::pair{block_b2.height(), block_b2.id()});
+    CHECK(locator[1] == std::pair{block_b1.height(), block_b1.id()});
+    CHECK(locator[2] == std::pair{genesis.height(), genesis.id()});
+    CHECK(blockchain.block_locator(block_b2.id(), 2).back().second == genesis.id());
+    bbc::crypto::Hash256 unknown{};
+    unknown.front() = 0xFF;
+    CHECK(blockchain.block_locator(unknown, 4).empty());
+}
+
+TEST_CASE("duplicate and unknown-parent blocks do not change stored branches", "[chain][fork]") {
+    const bbc::chain::Block genesis = bbc::chain::genesis_block(2);
+    const bbc::chain::Block block = mine_regtest_block(
+        genesis,
+        address_with_first_byte(0xA2),
+        1
+    );
+    bbc::chain::Blockchain blockchain{2};
+    REQUIRE(blockchain.append(block).has_value());
+
+    CHECK(blockchain.append(block).error == bbc::chain::ChainError::duplicate_block);
+
+    bbc::crypto::Hash256 missing_parent{};
+    missing_parent.front() = 0xFF;
+    bbc::chain::BlockResult orphan = bbc::chain::create_block({
+        2,
+        missing_parent,
+        address_with_first_byte(0xA3),
+        2,
+        bbc::consensus::fixed_difficulty_target(2),
+        0,
+        {},
+        2,
+    });
+    REQUIRE(orphan.has_value());
+    CHECK(
+        blockchain.append(std::move(orphan).value()).error ==
+        bbc::chain::ChainError::unexpected_parent
+    );
+    CHECK(blockchain.stored_block_count() == 2);
+}
+
+TEST_CASE("a side branch is validated against its own parent state", "[chain][fork][state]") {
+    const bbc::wallet::Wallet sender = deterministic_wallet();
+    const bbc::chain::Block genesis = bbc::chain::genesis_block(2);
+    const bbc::chain::Block block_a1 =
+        mine_regtest_block(genesis, sender.address(), 1);
+    const bbc::chain::Block block_b1 = mine_regtest_block(
+        genesis,
+        address_with_first_byte(0xB2),
+        2
+    );
+    bbc::transaction::TransactionResult signed_transaction =
+        bbc::transaction::sign_transaction(
+            sender,
+            {address_with_first_byte(0x22), 1, 0, 0, 2}
+        );
+    REQUIRE(signed_transaction.has_value());
+    const bbc::chain::Block invalid_block_b2 = mine_regtest_block(
+        block_b1,
+        address_with_first_byte(0xB2),
+        3,
+        {std::move(signed_transaction).value()}
+    );
+    bbc::chain::Blockchain blockchain{2};
+    REQUIRE(blockchain.append(block_a1).has_value());
+    REQUIRE(blockchain.append(block_b1).has_value());
+
+    const bbc::chain::AppendResult rejected = blockchain.append(invalid_block_b2);
+
+    CHECK_FALSE(rejected.has_value());
+    CHECK(rejected.error == bbc::chain::ChainError::invalid_state_transition);
+    CHECK(
+        rejected.state_error ==
+        bbc::chain::StateTransitionError::insufficient_balance
+    );
+    CHECK(blockchain.tip().id() == block_a1.id());
+    CHECK(blockchain.stored_block_count() == 3);
 }
 
 TEST_CASE("mined blocks apply a signed transfer end to end", "[chain][state]") {

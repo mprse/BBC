@@ -64,7 +64,7 @@ not attempt to reinterpret such a frame.
 | 20 | `TRANSACTION_SUBMIT` | 161 bytes | No |
 | 21 | `TRANSACTION` | 161 bytes | No |
 | 22 | `TRANSACTION_RESULT` | 35 bytes | No |
-| 30 | `GET_BLOCKS` | 50 bytes | No |
+| 30 | `GET_BLOCKS` | 52..1292 bytes | No |
 | 31 | `BLOCKS` | 11..1048576 bytes | No |
 
 Message type zero is invalid. Unknown message types cause a disconnect in wire
@@ -103,8 +103,9 @@ and does not expose a listener.
 
 The connection is rejected when the chain ID or Genesis Block ID differs from
 the local network. Equal session nonces indicate a self-connection and are also
-rejected. Stage 7.4 full nodes use the tip fields to detect missing linear-chain
-history as specified in `sync-protocol-v1.md`; the advertisement itself never
+rejected. Stage 7.4 and Stage 8.2 full nodes use the tip fields to detect missing
+history and begin fork-aware synchronization as specified in
+`sync-protocol-v1.md`; the advertisement itself never
 modifies local chain state. An already-connected mining worker advances its small validated-tip
 view only after receiving an accepted `BLOCK` or matching successful
 `BLOCK_RESULT`; it does not treat later templates as evidence that blocks were
@@ -202,4 +203,6 @@ Multi-process tests must cover:
 - simultaneous cross-connect converging to one session;
 - peer restart followed by reconnect and another successful handshake;
 - a late full node downloading, validating, and persisting missing blocks;
-- restart from synchronized storage without downloading those blocks again.
+- restart from synchronized storage without downloading those blocks again;
+- a healed partition finding its common ancestor, transferring a stronger
+  branch, reorganizing, and converging after restart.

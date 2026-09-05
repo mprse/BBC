@@ -471,6 +471,44 @@ the blocks again. The wire format and decision are documented in
 [`docs/sync-protocol-v1.md`](docs/sync-protocol-v1.md) and
 [`docs/adr/0013-initial-block-synchronization.md`](docs/adr/0013-initial-block-synchronization.md).
 
+## Stage 8.1: Fork storage and local reorganization
+
+Full nodes now persist valid competing blocks and select the active branch by
+strictly greater cumulative work. Because each current network profile has one
+fixed Proof-of-Work target, every non-Genesis block contributes one work unit.
+Equal-height branches remain stored without replacing the current tip.
+
+When a side branch becomes longer, the node switches to its validated state,
+updates its advertised tip, revalidates the mempool, and reconsiders eligible
+transactions from detached blocks. `chain.db` schema version 2 indexes all
+stored blocks and marks the active branch; `blocks.dat` remains authoritative
+and preserves side branches across restart.
+
+The exact rules are specified in [`docs/chain-state.md`](docs/chain-state.md),
+[`docs/chain-store.md`](docs/chain-store.md), and
+[`docs/adr/0014-cumulative-work-fork-choice.md`](docs/adr/0014-cumulative-work-fork-choice.md).
+
+## Stage 8.2: Fork-aware synchronization
+
+Run the complete partition, competing-branch, healing, and restart flow:
+
+```console
+python tools/scenario.py scenarios/fork-reorg.json --regtest --no-ui
+```
+
+The scenario creates a shared reward block, disconnects the full nodes, mines a
+payment block on one side and a longer reward-only branch on the other, then
+reconnects them. A multi-entry locator finds the common ancestor. The weaker
+node stores the competing suffix, reorganizes only when it becomes strictly
+stronger, restores the detached payment to its mempool, and relays it. Final
+assertions compare active tips and account state, verify both mempools, retain
+the abandoned side block, and repeat the checks after restart.
+
+The wire and test-control details are specified in
+[`docs/sync-protocol-v1.md`](docs/sync-protocol-v1.md),
+[`docs/node-control.md`](docs/node-control.md), and
+[`docs/adr/0015-fork-aware-synchronization.md`](docs/adr/0015-fork-aware-synchronization.md).
+
 ## Visual Studio Code
 
 Open the repository in Visual Studio Code, then:

@@ -123,6 +123,40 @@ public:
         return true;
     }
 
+    [[nodiscard]] bool disconnect(
+        const std::string_view host,
+        const std::uint16_t port,
+        std::string& error
+    ) {
+        asio::error_code address_error;
+        const asio::ip::address address = asio::ip::make_address(host, address_error);
+        if (address_error || !address.is_v4() || !address.to_v4().is_loopback() ||
+            port == 0) {
+            error = "P2P endpoint must use a nonzero 127.0.0.0/8 port.";
+            return false;
+        }
+        const asio::ip::tcp::endpoint endpoint{address, port};
+        asio::post(context_, [this, endpoint] {
+            const std::string key = endpoint_text(endpoint);
+            const auto found = targets_.find(key);
+            if (found == targets_.end()) {
+                emit(PeerEvent{"peer_disconnect_failed", 0, key, "target not found"});
+                return;
+            }
+            const std::shared_ptr<Target> target = found->second;
+            target->timer.cancel();
+            if (target->session_id.has_value()) {
+                const auto session = sessions_.find(*target->session_id);
+                if (session != sessions_.end()) {
+                    session->second->stop("peer disconnected by control", true, false);
+                }
+            }
+            targets_.erase(key);
+            emit(PeerEvent{"peer_target_removed", 0, key, {}});
+        });
+        return true;
+    }
+
     [[nodiscard]] std::uint64_t ping_all() {
         const std::uint64_t nonce = reserve_ping_nonce();
         asio::post(context_, [this, nonce] {
@@ -834,6 +868,14 @@ bool PeerNetwork::connect(
     std::string& error
 ) {
     return impl_->connect(host, port, error);
+}
+
+bool PeerNetwork::disconnect(
+    const std::string_view host,
+    const std::uint16_t port,
+    std::string& error
+) {
+    return impl_->disconnect(host, port, error);
 }
 
 std::uint64_t PeerNetwork::ping_all() {

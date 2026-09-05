@@ -234,7 +234,10 @@ TEST_CASE("P2P transaction messages enforce canonical payload sizes", "[network]
 }
 
 TEST_CASE("P2P synchronization messages enforce bounded payload sizes", "[network]") {
-    const bbc::crypto::Bytes request(bbc::network::get_blocks_payload_size, 0);
+    const bbc::crypto::Bytes request(
+        bbc::network::get_blocks_payload_minimum_size,
+        0
+    );
     CHECK_FALSE(bbc::network::serialize_frame(
         bbc::network::MessageType::get_blocks,
         request
@@ -242,6 +245,14 @@ TEST_CASE("P2P synchronization messages enforce bounded payload sizes", "[networ
     CHECK(bbc::network::serialize_frame(
         bbc::network::MessageType::get_blocks,
         bbc::crypto::ByteView{request}.first(request.size() - 1)
+    ).empty());
+    const bbc::crypto::Bytes oversized_request(
+        bbc::network::get_blocks_payload_maximum_size + 1,
+        0
+    );
+    CHECK(bbc::network::serialize_frame(
+        bbc::network::MessageType::get_blocks,
+        oversized_request
     ).empty());
 
     const bbc::crypto::Bytes empty_response(
@@ -382,6 +393,27 @@ TEST_CASE("P2P session handles fragmented and coalesced TCP frames", "[network]"
     CHECK(bbc::network::deserialize_ping_nonce(first_pong.payload) == 11);
     CHECK(bbc::network::deserialize_ping_nonce(second_pong.payload) == 22);
 
+    server.stop();
+}
+
+TEST_CASE("an outbound peer target can be disconnected without reconnecting", "[network]") {
+    bbc::network::PeerNetwork server{test_network_config(), {}};
+    bbc::network::PeerNetwork client{test_network_config(), {}};
+    std::string error;
+    REQUIRE(server.start(error));
+    REQUIRE(client.start(error));
+    REQUIRE(client.connect("127.0.0.1", server.listen_port(), error));
+    REQUIRE(wait_for_peer_count(server, 1));
+    REQUIRE(wait_for_peer_count(client, 1));
+
+    REQUIRE(client.disconnect("127.0.0.1", server.listen_port(), error));
+    REQUIRE(wait_for_peer_count(client, 0));
+    REQUIRE(wait_for_peer_count(server, 0));
+    std::this_thread::sleep_for(std::chrono::milliseconds{350});
+    CHECK(client.peers().empty());
+    CHECK(server.peers().empty());
+
+    client.stop();
     server.stop();
 }
 

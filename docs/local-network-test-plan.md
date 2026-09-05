@@ -450,8 +450,34 @@ the three full-node states, restarts `full-c` with the same data directory, and
 proves that it is already up to date. The wire contract is defined in
 `sync-protocol-v1.md` and accepted by ADR 0013.
 
-Stage 8 then adds competing branches, cumulative work, reorganization, network
-partition controls, healing, and eligible transaction reinsertion.
+### Stage 8.1: Local fork choice (implemented)
+
+- retain fully validated side branches in memory and `blocks.dat`;
+- select only strictly greater cumulative work, with stable first-seen ties;
+- switch account state atomically at the common ancestor;
+- revalidate the mempool and reconsider eligible detached transactions;
+- rebuild the same branches and active tip after restart.
+
+The fixed target makes cumulative work equal to non-Genesis block count in this
+protocol version. ADR 0014 defines the fork-choice and persistence rules.
+
+### Stage 8.2: Partition and healing scenario (implemented)
+
+- multi-entry block locators and common-ancestor discovery;
+- runner controls that disconnect and reconnect selected P2P links;
+- deliberate competing branches on opposite sides of a partition;
+- healing, missing-branch transfer, observable reorganization, and convergence;
+- end-to-end verification of eligible transaction reinsertion.
+
+`scenarios/fork-reorg.json` implements this flow with two full nodes, two
+wallet miners, and one receiving wallet. The nodes first share one reward block,
+then the runner removes their full-node link. The A branch confirms a signed
+payment at height 2 while the B branch mines reward-only blocks at heights 2 and
+3. Reconnecting the link makes `full-a` locate shared height 1, store B2 as a
+side block, activate B3, detach A2, and restore the payment to its mempool. The
+restored transaction is relayed to `full-b`, and a restart proves that `full-a`
+retains all five stored blocks while both nodes expose the same active state.
+The protocol and rationale are recorded in ADR 0015.
 
 ## 12. Decisions required before Stage 7 implementation
 

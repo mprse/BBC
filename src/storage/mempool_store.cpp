@@ -275,6 +275,47 @@ MempoolStoreRevalidationResult MempoolStore::revalidate(
     return {MempoolStoreError::none, removed};
 }
 
+MempoolStoreReorganizationResult MempoolStore::reconcile_reorganization(
+    const chain::ChainState& chain_state,
+    const std::vector<chain::Block>& detached_blocks
+) {
+    mempool::Mempool next{chain_state};
+    std::size_t detached = 0;
+    std::size_t restored = 0;
+    std::vector<transaction::SignedTransaction> transactions_to_relay;
+    for (const chain::Block& block : detached_blocks) {
+        for (const transaction::SignedTransaction& transaction :
+             block.transactions()) {
+            ++detached;
+            if (next.add(transaction) == mempool::MempoolError::none) {
+                ++restored;
+                transactions_to_relay.push_back(transaction);
+            }
+        }
+    }
+    std::size_t retained = 0;
+    for (const transaction::SignedTransaction& transaction :
+         mempool_.transactions()) {
+        if (next.add(transaction) == mempool::MempoolError::none) {
+            ++retained;
+        }
+    }
+    const std::size_t removed = mempool_.size() - retained;
+
+    const MempoolStoreError storage_error = rewrite_database(next);
+    if (storage_error != MempoolStoreError::none) {
+        return {storage_error};
+    }
+    mempool_ = std::move(next);
+    return {
+        MempoolStoreError::none,
+        removed,
+        detached,
+        restored,
+        std::move(transactions_to_relay),
+    };
+}
+
 MempoolStoreError MempoolStore::rewrite_database(
     const mempool::Mempool& value
 ) const {
