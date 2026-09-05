@@ -6,7 +6,9 @@ Stage 7.0 introduced a long-running BBC actor process and a Python supervisor.
 Stage 7.1 adds a separate binary P2P listener for full-node actors, explicit
 scenario topology, handshake observation, ping checks, and reconnect tests.
 Stage 7.2 adds signed transaction submission and mempool convergence. Stage 7.3
-adds network profiles and scenario-controlled mining workers.
+adds network profiles and scenario-controlled mining workers. Stage 7.4 adds
+staged actor startup, initial block synchronization, and restart-from-storage
+verification.
 
 ## Actor command
 
@@ -51,7 +53,8 @@ submit one transaction through `submit_transaction`; persistent scenario
 wallets and automatic nonce lookup remain later increments. P2P behavior is defined in
 [`p2p-protocol-v1.md`](p2p-protocol-v1.md) and
 [`mining-protocol-v1.md`](mining-protocol-v1.md), with transaction messages in
-[`transaction-protocol-v1.md`](transaction-protocol-v1.md).
+[`transaction-protocol-v1.md`](transaction-protocol-v1.md) and synchronization
+messages in [`sync-protocol-v1.md`](sync-protocol-v1.md).
 
 ## Control protocol
 
@@ -142,8 +145,11 @@ modes use exactly the same scenario execution and assertions.
 Implemented steps are:
 
 - `{"command": "start_all"}`;
+- `{"command": "start", "actors": ["node-a", "node-b"]}`;
 - `{"wait": "all_ready"}`;
+- `{"wait": "actors_ready", "actors": ["node-a", "node-b"]}`;
 - `{"command": "connect_all"}`;
+- `{"command": "connect_all", "actors": ["node-a", "node-b"]}`;
 - `{"wait": "full_nodes_connected"}`;
 - `{"command": "ping", "actors": ["node-a", "node-b"]}`;
 - `{"wait": "pongs"}`;
@@ -153,19 +159,24 @@ Implemented steps are:
   ["miner-a", "miner-b"], "to": "receiver", "amount": 1000000000,
   "fee": 1000, "nonce": 0}`;
 - `{"wait": "transaction_propagated"}`;
+- `{"wait": "sync_complete", "actors": ["node-c"], "height": 2}`;
 - `{"command": "restart", "actor": "node-b"}`;
 - `{"command": "dump", "actors": "all"}`.
 
 The mining command and completion wait may be repeated for later heights. The
 runner records one winner per completed round so assertions can distinguish the
 funded sender from the miner that confirms its payment.
+Actor-scoped `start`, readiness, connection, and peer waits let a scenario keep
+a node offline while the initial chain advances. `sync_complete` waits for both
+the requested height and an explicit successful target-tip match.
 
 It implements `all_ready`, `same_tip`, `same_state`, exact `height`, exact
 `tip_transaction_count`, full-node `mempool_size`, `same_mempool`, per-actor
 `peer_count`, `mining_outcome`, `winner_reward`, and `payment_confirmed`
-assertions. `payment_confirmed` verifies the dynamic balance outcome for either
-the same or different winners across the first two rounds, including the
-height-2 fee, sender nonce, and total supply. Restart preserves the
+assertions. `sync_state` can additionally require a full node's final state and
+download count. `payment_confirmed` verifies the dynamic balance outcome for either
+the same or different winners, including the height-2 fee, sender nonce, and
+total supply across all completed mining rounds. Restart preserves the
 actor data directory and resolved P2P port, allowing configured peers to prove
 automatic reconnect. Unsupported future steps and assertions fail explicitly
 rather than being ignored.

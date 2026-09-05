@@ -477,12 +477,16 @@ def drain_events(
 
 def connect_scenario_peers(
     actors: list[Actor],
+    selected: list[Actor],
     timeout_seconds: float,
     request_id: int,
 ) -> int:
     by_name = {actor.name: actor for actor in actors}
-    for actor in actors:
+    selected_names = {actor.name for actor in selected}
+    for actor in selected:
         for peer_name in actor.peers:
+            if peer_name not in selected_names:
+                continue
             peer = by_name[peer_name]
             if peer.p2p_port is None:
                 raise ScenarioError(f"Peer {peer.name} has no resolved P2P port.")
@@ -495,6 +499,8 @@ def connect_scenario_peers(
             )
             request_id += 1
         if actor.mining_source is not None:
+            if actor.mining_source not in selected_names:
+                continue
             peer = by_name[actor.mining_source]
             if peer.p2p_port is None:
                 raise ScenarioError(f"Mining source {peer.name} has no P2P port.")
@@ -509,17 +515,23 @@ def connect_scenario_peers(
     return request_id
 
 
-def expected_peer_counts(actors: list[Actor]) -> dict[str, int]:
+def expected_peer_counts(
+    actors: list[Actor],
+    selected: list[Actor],
+) -> dict[str, int]:
+    selected_names = {actor.name for actor in selected}
     neighbors: dict[str, set[str]] = {
         actor.name: set()
-        for actor in actors
+        for actor in selected
         if "full_node" in actor.roles or "miner" in actor.roles
     }
-    for actor in actors:
+    for actor in selected:
         for peer_name in actor.peers:
+            if peer_name not in selected_names:
+                continue
             neighbors[actor.name].add(peer_name)
             neighbors[peer_name].add(actor.name)
-        if actor.mining_source is not None:
+        if actor.mining_source is not None and actor.mining_source in selected_names:
             neighbors[actor.name].add(actor.mining_source)
             neighbors[actor.mining_source].add(actor.name)
     return {name: len(values) for name, values in neighbors.items()}
@@ -527,11 +539,12 @@ def expected_peer_counts(actors: list[Actor]) -> dict[str, int]:
 
 def wait_for_peer_connections(
     actors: list[Actor],
+    selected: list[Actor],
     output_queue: queue.Queue[tuple[Actor, str]],
     display: Display,
     timeout_seconds: float,
 ) -> None:
-    expected = expected_peer_counts(actors)
+    expected = expected_peer_counts(actors, selected)
     by_name = {actor.name: actor for actor in actors}
     deadline = time.monotonic() + timeout_seconds
     request_id = 200_000
@@ -594,8 +607,10 @@ def wait_for_mining(
     timeout_seconds: float,
     height: int,
 ) -> str:
-    miners = [actor for actor in actors if "miner" in actor.roles]
-    full_nodes = [actor for actor in actors if "full_node" in actor.roles]
+    miners = [actor for actor in actors if actor.ready and "miner" in actor.roles]
+    full_nodes = [
+        actor for actor in actors if actor.ready and "full_node" in actor.roles
+    ]
     deadline = time.monotonic() + timeout_seconds
     request_id = 400_000
     while True:
@@ -695,6 +710,37 @@ def wait_for_transaction_propagation(
         time.sleep(0.02)
 
 
+def wait_for_sync(
+    selected: list[Actor],
+    output_queue: queue.Queue[tuple[Actor, str]],
+    display: Display,
+    timeout_seconds: float,
+    height: int,
+) -> None:
+    deadline = time.monotonic() + timeout_seconds
+    request_id = 550_000
+    latest: dict[str, Any] = {}
+    while True:
+        drain_events(output_queue, display)
+        complete = True
+        for actor in selected:
+            status = control_request(actor, request_id, "status", timeout_seconds)
+            request_id += 1
+            latest[actor.name] = {
+                "height": status["chain"]["height"],
+                "sync": status["sync"]["state"],
+            }
+            if status["chain"]["height"] != height or status["sync"]["state"] != "complete":
+                complete = False
+        if complete:
+            return
+        if time.monotonic() >= deadline:
+            raise ScenarioError(
+                f"Timed out waiting for block synchronization: {latest}."
+            )
+        time.sleep(0.02)
+
+
 def run_steps(
     steps: Any,
     actors: list[Actor],
@@ -705,7 +751,7 @@ def run_steps(
 ) -> tuple[dict[str, Any], dict[str, Any]]:
     if not isinstance(steps, list):
         raise ScenarioError("Scenario steps must be an array.")
-    started = False
+    started_names: set[str] = set()
     dumps: dict[str, Any] = {}
     expected_pongs: dict[str, int] = {}
     submitted_transaction: tuple[Actor, str] | None = None
@@ -718,26 +764,45 @@ def run_steps(
         if not isinstance(step, dict):
             raise ScenarioError("Every scenario step must be an object.")
         if step.get("command") == "start_all":
-            if started:
+            if started_names:
                 raise ScenarioError("start_all may appear only once.")
             display.controller("Starting actors")
             start_actors(actors, executable, output_queue)
-            started = True
+            started_names.update(actor.name for actor in actors)
+        elif step.get("command") == "start":
+            selected = actor_selection(step.get("actors"), actors)
+            duplicates = [actor.name for actor in selected if actor.name in started_names]
+            if duplicates:
+                raise ScenarioError(f"Actors already started: {', '.join(duplicates)}.")
+            display.controller("Starting selected actors")
+            start_actors(selected, executable, output_queue)
+            started_names.update(actor.name for actor in selected)
         elif step.get("wait") == "all_ready":
-            if not started:
+            if len(started_names) != len(actors):
                 raise ScenarioError("Actors must be started before all_ready.")
             display.controller("Waiting for all actors")
             wait_for_ready(actors, output_queue, display, timeout_seconds)
             display.controller("All actors are ready")
+        elif step.get("wait") == "actors_ready":
+            selected = actor_selection(step.get("actors"), actors)
+            if any(actor.name not in started_names for actor in selected):
+                raise ScenarioError("Selected actors must be started before actors_ready.")
+            display.controller("Waiting for selected actors")
+            wait_for_ready(selected, output_queue, display, timeout_seconds)
+            display.controller("Selected actors are ready")
         elif step.get("command") == "connect_all":
-            if not all(actor.ready for actor in actors):
-                raise ScenarioError("All actors must be ready before connect_all.")
+            selected = actor_selection(step.get("actors", "all"), actors)
+            if not all(actor.ready for actor in selected):
+                raise ScenarioError("Selected actors must be ready before connect_all.")
             display.controller("Connecting scenario peers")
-            request_id = connect_scenario_peers(actors, timeout_seconds, request_id)
+            request_id = connect_scenario_peers(
+                actors, selected, timeout_seconds, request_id
+            )
         elif step.get("wait") == "full_nodes_connected":
+            selected = actor_selection(step.get("actors", "all"), actors)
             display.controller("Waiting for P2P handshakes")
             wait_for_peer_connections(
-                actors, output_queue, display, timeout_seconds
+                actors, selected, output_queue, display, timeout_seconds
             )
             display.controller("Full nodes are connected")
         elif step.get("command") == "ping":
@@ -871,7 +936,10 @@ def run_steps(
                 raise ScenarioError("No transaction was submitted.")
             display.controller("Waiting for transaction propagation")
             wait_for_transaction_propagation(
-                [actor for actor in actors if "full_node" in actor.roles],
+                [
+                    actor for actor in actors
+                    if actor.ready and "full_node" in actor.roles
+                ],
                 submitted_transaction[0],
                 submitted_transaction[1],
                 output_queue,
@@ -879,6 +947,18 @@ def run_steps(
                 timeout_seconds,
             )
             display.controller("Transaction reached every full-node mempool")
+        elif step.get("wait") == "sync_complete":
+            selected = actor_selection(step.get("actors"), actors)
+            if any("full_node" not in actor.roles for actor in selected):
+                raise ScenarioError("sync_complete may target only full nodes.")
+            height = step.get("height")
+            if not isinstance(height, int) or height < 0:
+                raise ScenarioError("sync_complete requires a nonnegative height.")
+            display.controller(f"Waiting for synchronization to height {height}")
+            wait_for_sync(
+                selected, output_queue, display, timeout_seconds, height
+            )
+            display.controller("Selected full nodes are synchronized")
         elif step.get("command") == "restart":
             name = step.get("actor")
             if not isinstance(name, str):
@@ -906,8 +986,9 @@ def run_steps(
                 dump_path.write_text(json.dumps(result, indent=2) + "\n", encoding="utf-8")
         else:
             raise ScenarioError(f"Unsupported scenario step: {step}")
-    if not started:
-        raise ScenarioError("Scenario must contain start_all.")
+    if len(started_names) != len(actors):
+        missing = sorted({actor.name for actor in actors} - started_names)
+        raise ScenarioError(f"Scenario did not start actors: {', '.join(missing)}.")
     return dumps, scenario_state
 
 
@@ -1018,6 +1099,36 @@ def run_assertions(
                     f"Assertion failed: {actor.name} has {actual} peers, "
                     f"expected {expected['value']}."
                 )
+        elif "sync_state" in assertion:
+            expected = assertion["sync_state"]
+            if (
+                not isinstance(expected, dict)
+                or not isinstance(expected.get("actor"), str)
+                or not isinstance(expected.get("value"), str)
+            ):
+                raise ScenarioError("sync_state assertion is invalid.")
+            actor = actor_selection([expected["actor"]], actors)[0]
+            try:
+                actual = dumps[actor.name]["sync"]
+            except KeyError as error:
+                raise ScenarioError(
+                    f"sync_state has no sync dump field for {actor.name}."
+                ) from error
+            if actual["state"] != expected["value"]:
+                raise ScenarioError(
+                    f"Assertion failed: {actor.name} sync state is "
+                    f"{actual['state']}, expected {expected['value']}."
+                )
+            received_blocks = expected.get("received_blocks")
+            if received_blocks is not None and (
+                not isinstance(received_blocks, int)
+                or actual["received_blocks"] != received_blocks
+            ):
+                raise ScenarioError(
+                    f"Assertion failed: {actor.name} received "
+                    f"{actual['received_blocks']} sync blocks, expected "
+                    f"{received_blocks}."
+                )
         elif "mining_outcome" in assertion:
             expected = assertion["mining_outcome"]
             selected = actor_selection(expected.get("actors"), actors)
@@ -1076,14 +1187,14 @@ def run_assertions(
             by_name = {actor.name: actor for actor in actors}
             first_miner = by_name[winners[0]]
             second_miner = by_name[winners[1]]
-            involved = {first_miner.name, second_miner.name, recipient.name}
+            involved = {*winners, recipient.name}
             addresses = {
                 name: dumps[name]["wallet_address"]
                 for name in involved
             }
             expected_balances: dict[str, int] = {}
-            for winner in (first_miner, second_miner):
-                address = addresses[winner.name]
+            for winner_name in winners:
+                address = addresses[winner_name]
                 expected_balances[address] = expected_balances.get(address, 0) + reward
             sender_address = addresses[first_miner.name]
             recipient_address = addresses[recipient.name]
@@ -1114,10 +1225,11 @@ def run_assertions(
                         f"{full_node.name} sender nonce is {sender_nonce}, expected 1."
                     )
                 total_supply = sum(account["balance"] for account in accounts.values())
-                if total_supply != reward * 2:
+                expected_supply = reward * len(winners)
+                if total_supply != expected_supply:
                     raise ScenarioError(
                         f"{full_node.name} supply is {total_supply}, "
-                        f"expected {reward * 2}."
+                        f"expected {expected_supply}."
                     )
         else:
             raise ScenarioError(f"Unsupported scenario assertion: {assertion}")

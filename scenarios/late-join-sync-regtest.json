@@ -1,0 +1,103 @@
+{
+  "schema_version": 1,
+  "name": "late-join-sync-regtest",
+  "network": {
+    "profile": "regtest",
+    "step_timeout_ms": 15000
+  },
+  "actors": [
+    {
+      "name": "full-a",
+      "roles": ["full_node"],
+      "control": "127.0.0.1:0",
+      "p2p": "127.0.0.1:0",
+      "peers": ["full-b", "full-c"]
+    },
+    {
+      "name": "full-b",
+      "roles": ["full_node"],
+      "control": "127.0.0.1:0",
+      "p2p": "127.0.0.1:0"
+    },
+    {
+      "name": "full-c",
+      "roles": ["full_node"],
+      "control": "127.0.0.1:0",
+      "p2p": "127.0.0.1:0"
+    },
+    {
+      "name": "miner-a",
+      "roles": ["wallet", "miner"],
+      "control": "127.0.0.1:0",
+      "mining_source": "full-a"
+    },
+    {
+      "name": "miner-b",
+      "roles": ["wallet", "miner"],
+      "control": "127.0.0.1:0",
+      "mining_source": "full-a"
+    },
+    {
+      "name": "receiver",
+      "roles": ["wallet"],
+      "control": "127.0.0.1:0"
+    }
+  ],
+  "steps": [
+    {"command": "start", "actors": ["full-a", "full-b", "miner-a", "miner-b", "receiver"]},
+    {"wait": "actors_ready", "actors": ["full-a", "full-b", "miner-a", "miner-b", "receiver"]},
+    {"command": "connect_all", "actors": ["full-a", "full-b", "miner-a", "miner-b", "receiver"]},
+    {"wait": "full_nodes_connected", "actors": ["full-a", "full-b", "miner-a", "miner-b", "receiver"]},
+    {"command": "start_mining", "actors": ["miner-a", "miner-b"]},
+    {"wait": "mining_complete", "height": 1},
+    {
+      "command": "submit_transaction",
+      "from": "mining_winner",
+      "miners": ["miner-a", "miner-b"],
+      "to": "receiver",
+      "amount": 1000000000,
+      "fee": 1000,
+      "nonce": 0
+    },
+    {"wait": "transaction_propagated"},
+    {"command": "start_mining", "actors": ["miner-a", "miner-b"]},
+    {"wait": "mining_complete", "height": 2},
+    {"command": "start_mining", "actors": ["miner-a", "miner-b"]},
+    {"wait": "mining_complete", "height": 3},
+    {"command": "start_mining", "actors": ["miner-a", "miner-b"]},
+    {"wait": "mining_complete", "height": 4},
+    {"command": "start_mining", "actors": ["miner-a", "miner-b"]},
+    {"wait": "mining_complete", "height": 5},
+    {"command": "start", "actors": ["full-c"]},
+    {"wait": "all_ready"},
+    {"command": "connect_all"},
+    {"wait": "full_nodes_connected"},
+    {"wait": "sync_complete", "actors": ["full-c"], "height": 5},
+    {"command": "restart", "actor": "full-c"},
+    {"wait": "full_nodes_connected"},
+    {"command": "dump", "actors": "all"}
+  ],
+  "assertions": [
+    {"all_ready": true},
+    {"same_tip": ["full-a", "full-b", "full-c"]},
+    {"same_state": ["full-a", "full-b", "full-c"]},
+    {"height": {"actors": ["full-a", "full-b", "full-c"], "value": 5}},
+    {"tip_transaction_count": {"actors": ["full-a", "full-b", "full-c"], "value": 0}},
+    {"mempool_size": 0},
+    {"same_mempool": ["full-a", "full-b", "full-c"]},
+    {"peer_count": {"actor": "full-a", "value": 4}},
+    {"peer_count": {"actor": "full-b", "value": 1}},
+    {"peer_count": {"actor": "full-c", "value": 1}},
+    {"sync_state": {"actor": "full-c", "value": "up_to_date", "received_blocks": 0}},
+    {"mining_outcome": {"actors": ["miner-a", "miner-b"]}},
+    {
+      "payment_confirmed": {
+        "full_nodes": ["full-a", "full-b", "full-c"],
+        "recipient": "receiver",
+        "amount": 1000000000,
+        "fee": 1000,
+        "block_reward": 5000000000
+      }
+    }
+  ]
+}

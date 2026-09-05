@@ -152,4 +152,18 @@ if(BUILD_TESTING)
         BBC.local-transaction-confirmation-regtest
         PROPERTIES TIMEOUT 30
     )
+
+    add_test(
+        NAME BBC.local-late-join-sync-regtest
+        COMMAND
+            "${Python3_EXECUTABLE}"
+            "${CMAKE_SOURCE_DIR}/tools/scenario.py"
+            "${CMAKE_SOURCE_DIR}/scenarios/late-join-sync-regtest.json"
+            --executable "$<TARGET_FILE:bbc>"
+            --no-ui
+    )
+    set_tests_properties(
+        BBC.local-late-join-sync-regtest
+        PROPERTIES TIMEOUT 30
+    )
 endif()

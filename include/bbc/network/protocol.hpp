@@ -15,6 +15,9 @@ inline constexpr std::size_t frame_header_size = 44;
 inline constexpr std::size_t maximum_frame_payload_size = 1024 * 1024;
 inline constexpr std::size_t hello_payload_size = 104;
 inline constexpr std::size_t ping_payload_size = 8;
+inline constexpr std::size_t get_blocks_payload_size = 50;
+inline constexpr std::size_t blocks_payload_minimum_size = 11;
+inline constexpr std::uint16_t maximum_blocks_per_sync_batch = 4;
 inline constexpr std::uint16_t wire_version = 1;
 inline constexpr std::uint16_t protocol_version = 1;
 inline constexpr std::uint64_t full_node_service = 1ULL << 0U;
@@ -32,6 +35,8 @@ enum class MessageType : std::uint16_t {
     transaction_submit = 20,
     transaction = 21,
     transaction_result = 22,
+    get_blocks = 30,
+    blocks = 31,
 };
 
 enum class ProtocolError {

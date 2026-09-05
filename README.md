@@ -453,6 +453,24 @@ its fee, and causes both full nodes to remove the transaction from their
 mempools. The architectural decision is recorded in
 [`docs/adr/0012-network-transaction-confirmation.md`](docs/adr/0012-network-transaction-confirmation.md).
 
+## Stage 7.4: Initial full-node synchronization
+
+Run the late-join and restart scenario:
+
+```console
+python tools/scenario.py scenarios/late-join-sync-regtest.json --no-ui
+```
+
+The scenario advances `full-a` and `full-b` from Genesis through a reward block,
+a confirmed payment, and three more blocks before starting `full-c`. The late
+node requests five missing canonical blocks in bounded `4 + 1` batches,
+validates and persists them, and
+must reach the same tip and account state. It is then restarted with the same
+data directory and must report that it is already up to date without downloading
+the blocks again. The wire format and decision are documented in
+[`docs/sync-protocol-v1.md`](docs/sync-protocol-v1.md) and
+[`docs/adr/0013-initial-block-synchronization.md`](docs/adr/0013-initial-block-synchronization.md).
+
 ## Visual Studio Code
 
 Open the repository in Visual Studio Code, then:

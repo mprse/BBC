@@ -429,13 +429,22 @@ scenario runs a second coordinated race, mines the pending payment into height
 balances, the sender nonce, the miner fee, total supply, and full-node state
 convergence.
 
-### Stage 7.4: Initial synchronization
+### Stage 7.4: Initial synchronization (implemented)
 
 - tip and locator exchange;
 - missing-block request and bounded batch response;
 - late join and reconnect;
 - restart from existing local storage;
 - convergence dumps.
+
+The implemented scenario starts `full-c` only after the first reward, a
+height-2 payment confirmation, and three more blocks. Its current `HELLO`
+comparison starts bounded four-block requests from Genesis; five missing blocks
+therefore require `4 + 1` responses, and every block passes normal chain
+validation and persistence. The runner waits for explicit completion, compares
+the three full-node states, restarts `full-c` with the same data directory, and
+proves that it is already up to date. The wire contract is defined in
+`sync-protocol-v1.md` and accepted by ADR 0013.
 
 Stage 8 then adds competing branches, cumulative work, reorganization, network
 partition controls, healing, and eligible transaction reinsertion.

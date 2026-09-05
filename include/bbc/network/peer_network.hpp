@@ -76,6 +76,7 @@ public:
         std::string& error
     );
     [[nodiscard]] std::uint64_t ping_all();
+    void update_tip(std::uint64_t height, const crypto::Hash256& block_id);
     [[nodiscard]] bool send(
         std::uint64_t peer_id,
         MessageType type,

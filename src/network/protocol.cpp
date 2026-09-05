@@ -92,6 +92,10 @@ std::optional<MessageType> decode_message_type(const std::uint16_t value) {
             return MessageType::transaction;
         case static_cast<std::uint16_t>(MessageType::transaction_result):
             return MessageType::transaction_result;
+        case static_cast<std::uint16_t>(MessageType::get_blocks):
+            return MessageType::get_blocks;
+        case static_cast<std::uint16_t>(MessageType::blocks):
+            return MessageType::blocks;
         default:
             return std::nullopt;
     }
@@ -119,6 +123,11 @@ bool valid_payload_size(const MessageType type, const std::size_t size) {
             return size == transaction::signed_transaction_size;
         case MessageType::transaction_result:
             return size == crypto::hash256_size + 3;
+        case MessageType::get_blocks:
+            return size == get_blocks_payload_size;
+        case MessageType::blocks:
+            return size >= blocks_payload_minimum_size &&
+                size <= maximum_frame_payload_size;
     }
     return false;
 }

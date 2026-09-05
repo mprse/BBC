@@ -1,7 +1,7 @@
 # BBC P2P Protocol Version 1
 
 - Status: Accepted
-- Scope: Stage 7.1 through Stage 7.3
+- Scope: Stage 7.1 through Stage 7.4
 
 ## 1. Purpose
 
@@ -10,7 +10,7 @@ full nodes. It covers TCP framing, connection establishment, version and network
 checks, liveness messages, resource limits, and disconnect behavior.
 Transaction propagation is specified in `transaction-protocol-v1.md`, and
 Stage 7.3 mining payloads are specified in `mining-protocol-v1.md`.
-Initial chain synchronization remains outside the implemented scope.
+Initial chain synchronization is specified in `sync-protocol-v1.md`.
 
 The protocol is public and unauthenticated. A valid frame checksum detects
 accidental corruption but does not prove who sent a message. Every transaction,
@@ -64,6 +64,8 @@ not attempt to reinterpret such a frame.
 | 20 | `TRANSACTION_SUBMIT` | 161 bytes | No |
 | 21 | `TRANSACTION` | 161 bytes | No |
 | 22 | `TRANSACTION_RESULT` | 35 bytes | No |
+| 30 | `GET_BLOCKS` | 50 bytes | No |
+| 31 | `BLOCKS` | 11..1048576 bytes | No |
 
 Message type zero is invalid. Unknown message types cause a disconnect in wire
 version 1. A known message with the wrong payload length also causes a
@@ -101,8 +103,9 @@ and does not expose a listener.
 
 The connection is rejected when the chain ID or Genesis Block ID differs from
 the local network. Equal session nonces indicate a self-connection and are also
-rejected. Tip fields are informational in Stage 7.1 and do not modify local
-chain state. An already-connected mining worker advances its small validated-tip
+rejected. Stage 7.4 full nodes use the tip fields to detect missing linear-chain
+history as specified in `sync-protocol-v1.md`; the advertisement itself never
+modifies local chain state. An already-connected mining worker advances its small validated-tip
 view only after receiving an accepted `BLOCK` or matching successful
 `BLOCK_RESULT`; it does not treat later templates as evidence that blocks were
 accepted.
@@ -183,6 +186,7 @@ Unit tests must cover:
 
 - fixed byte vectors for `HELLO`, `PING`, and `PONG`;
 - canonical payload-size enforcement for transaction and mining messages;
+- canonical payload-size enforcement for synchronization messages;
 - one-byte-at-a-time header and payload delivery;
 - multiple frames in one input buffer;
 - bad magic, unsupported version, unknown type, oversized length, wrong fixed
@@ -196,4 +200,6 @@ Multi-process tests must cover:
 - an explicit connection reaching handshake-complete on both sides;
 - a successful ping round trip;
 - simultaneous cross-connect converging to one session;
-- peer restart followed by reconnect and another successful handshake.
+- peer restart followed by reconnect and another successful handshake;
+- a late full node downloading, validating, and persisting missing blocks;
+- restart from synchronized storage without downloading those blocks again.

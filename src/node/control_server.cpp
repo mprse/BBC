@@ -16,6 +16,7 @@
 #include <asio.hpp>
 #include <nlohmann/json.hpp>
 
+#include <algorithm>
 #include <cstddef>
 #include <atomic>
 #include <chrono>
@@ -35,6 +36,9 @@ namespace bbc::node {
 namespace {
 
 constexpr std::size_t maximum_control_request_size = 64 * 1024;
+constexpr crypto::Byte sync_status_ok = 0;
+constexpr crypto::Byte sync_status_locator_not_found = 1;
+constexpr crypto::Byte sync_status_invalid_request = 2;
 
 class EventEmitter final {
 public:
@@ -152,7 +156,7 @@ public:
                 tip_id,
                 genesis.id(),
             },
-            [&events](const network::PeerEvent& event) {
+            [this, &events](const network::PeerEvent& event) {
                 events.emit(
                     event.type,
                     {
@@ -161,6 +165,9 @@ public:
                         {"detail", event.detail},
                     }
                 );
+                if (event.type == "peer_handshake_complete") {
+                    maybe_start_sync(event.peer_id);
+                }
             },
             [this](
                 const std::uint64_t peer_id,
@@ -425,6 +432,19 @@ public:
                 {"known_tip", crypto::to_upper_hex(mining_known_tip_)},
             };
         }
+        if (chain_store_.has_value()) {
+            std::lock_guard lock{sync_mutex_};
+            result["sync"] = {
+                {"state", sync_state_},
+                {"received_blocks", sync_received_blocks_},
+                {"target_height", sync_target_height_.has_value()
+                    ? nlohmann::json(*sync_target_height_)
+                    : nlohmann::json(nullptr)},
+                {"target_tip", sync_target_tip_.has_value()
+                    ? nlohmann::json(crypto::to_upper_hex(*sync_target_tip_))
+                    : nlohmann::json(nullptr)},
+            };
+        }
         if (wallet_.has_value()) {
             std::lock_guard lock{transaction_mutex_};
             result["transaction"] = {
@@ -477,10 +497,45 @@ private:
         }
     }
 
-    static std::uint64_t read_u64(const crypto::ByteView input) {
+    static void append_u16(crypto::Bytes& output, const std::uint16_t value) {
+        output.push_back(static_cast<crypto::Byte>(value & 0xFFU));
+        output.push_back(static_cast<crypto::Byte>(value >> 8U));
+    }
+
+    static void append_u32(crypto::Bytes& output, const std::uint32_t value) {
+        for (unsigned int shift = 0; shift < 32; shift += 8) {
+            output.push_back(static_cast<crypto::Byte>((value >> shift) & 0xFFU));
+        }
+    }
+
+    static std::uint16_t read_u16(
+        const crypto::ByteView input,
+        const std::size_t offset
+    ) {
+        return static_cast<std::uint16_t>(input[offset]) |
+            static_cast<std::uint16_t>(input[offset + 1]) << 8U;
+    }
+
+    static std::uint32_t read_u32(
+        const crypto::ByteView input,
+        const std::size_t offset
+    ) {
+        std::uint32_t value = 0;
+        for (unsigned int index = 0; index < sizeof(value); ++index) {
+            value |= static_cast<std::uint32_t>(input[offset + index]) <<
+                (index * 8U);
+        }
+        return value;
+    }
+
+    static std::uint64_t read_u64(
+        const crypto::ByteView input,
+        const std::size_t offset = 0
+    ) {
         std::uint64_t value = 0;
         for (unsigned int index = 0; index < 8; ++index) {
-            value |= static_cast<std::uint64_t>(input[index]) << (index * 8U);
+            value |= static_cast<std::uint64_t>(input[offset + index]) <<
+                (index * 8U);
         }
         return value;
     }
@@ -621,6 +676,10 @@ private:
             handle_transaction(peer_id, payload, false);
         } else if (type == network::MessageType::transaction_result) {
             handle_transaction_result(peer_id, payload);
+        } else if (type == network::MessageType::get_blocks) {
+            handle_get_blocks(peer_id, payload);
+        } else if (type == network::MessageType::blocks) {
+            handle_blocks(peer_id, payload);
         }
     }
 
@@ -815,6 +874,7 @@ private:
             mining_known_height_ = block.height();
             mining_known_tip_ = id;
         }
+        network_->update_tip(block.height(), id);
         if (submission) {
             send_block_result(peer_id, id, true, 0);
         }
@@ -862,6 +922,319 @@ private:
                 : nlohmann::json{{"reason_code", reason}, {"reason", reason == 1
                     ? "stale_parent" : "invalid_block"}}
         );
+    }
+
+    void maybe_start_sync(const std::uint64_t peer_id) {
+        if (!chain_store_.has_value() || !network_.has_value()) {
+            return;
+        }
+        const auto peers = network_->peers();
+        const auto peer = std::ranges::find_if(
+            peers,
+            [peer_id](const network::PeerStatus& value) {
+                return value.id == peer_id && value.handshake_complete &&
+                    (value.services & network::full_node_service) != 0;
+            }
+        );
+        if (peer == peers.end()) {
+            return;
+        }
+
+        std::uint64_t local_height = 0;
+        crypto::Hash256 local_tip{};
+        {
+            std::lock_guard lock{state_mutex_};
+            local_height = chain_store_->blockchain().tip().height();
+            local_tip = chain_store_->blockchain().tip().id();
+        }
+        if (peer->remote_height < local_height) {
+            return;
+        }
+        if (peer->remote_height == local_height) {
+            const bool same_tip = peer->remote_tip == local_tip;
+            {
+                std::lock_guard lock{sync_mutex_};
+                if (pending_sync_request_.has_value()) {
+                    return;
+                }
+                if (same_tip && sync_state_ == "complete") {
+                    return;
+                }
+                sync_peer_ = peer_id;
+                sync_target_height_ = peer->remote_height;
+                sync_target_tip_ = peer->remote_tip;
+                sync_received_blocks_ = 0;
+                sync_state_ = same_tip ? "up_to_date" : "diverged";
+            }
+            emit(same_tip ? "sync_up_to_date" : "sync_diverged", {
+                {"height", local_height},
+                {"peer_id", peer_id},
+                {"tip", crypto::to_upper_hex(local_tip)},
+            });
+            return;
+        }
+
+        {
+            std::lock_guard lock{sync_mutex_};
+            if (pending_sync_request_.has_value() || sync_state_ == "syncing") {
+                return;
+            }
+            sync_peer_ = peer_id;
+            sync_target_height_ = peer->remote_height;
+            sync_target_tip_ = peer->remote_tip;
+            sync_received_blocks_ = 0;
+            sync_state_ = "syncing";
+        }
+        emit("sync_started", {
+            {"local_height", local_height},
+            {"peer_id", peer_id},
+            {"target_height", peer->remote_height},
+            {"target_tip", crypto::to_upper_hex(peer->remote_tip)},
+        });
+        send_sync_request(peer_id);
+    }
+
+    void fail_sync(const std::string_view reason) {
+        {
+            std::lock_guard lock{sync_mutex_};
+            pending_sync_request_.reset();
+            sync_state_ = "failed";
+        }
+        emit("sync_failed", {{"reason", reason}});
+    }
+
+    void send_sync_request(const std::uint64_t peer_id) {
+        if (!chain_store_.has_value() || !network_.has_value()) {
+            return;
+        }
+        std::uint64_t locator_height = 0;
+        crypto::Hash256 locator_id{};
+        {
+            std::lock_guard lock{state_mutex_};
+            locator_height = chain_store_->blockchain().tip().height();
+            locator_id = chain_store_->blockchain().tip().id();
+        }
+
+        std::uint64_t request_id = 0;
+        {
+            std::lock_guard lock{sync_mutex_};
+            if (!sync_peer_.has_value() || *sync_peer_ != peer_id ||
+                pending_sync_request_.has_value() || sync_state_ != "syncing") {
+                return;
+            }
+            request_id = next_sync_request_++;
+            pending_sync_request_ = request_id;
+        }
+        crypto::Bytes payload;
+        payload.reserve(network::get_blocks_payload_size);
+        append_u64(payload, request_id);
+        append_u64(payload, locator_height);
+        payload.insert(payload.end(), locator_id.begin(), locator_id.end());
+        append_u16(payload, network::maximum_blocks_per_sync_batch);
+        if (!network_->send(peer_id, network::MessageType::get_blocks, payload)) {
+            fail_sync("request_send_failed");
+            return;
+        }
+        emit("sync_request_sent", {
+            {"locator_height", locator_height},
+            {"peer_id", peer_id},
+            {"request_id", request_id},
+        });
+    }
+
+    void handle_get_blocks(
+        const std::uint64_t peer_id,
+        const crypto::ByteView payload
+    ) {
+        if (!chain_store_.has_value() || !network_.has_value() ||
+            payload.size() != network::get_blocks_payload_size) {
+            return;
+        }
+        const std::uint64_t request_id = read_u64(payload);
+        const std::uint64_t locator_height = read_u64(payload, 8);
+        crypto::Hash256 locator_id{};
+        std::ranges::copy(payload.subspan(16, locator_id.size()), locator_id.begin());
+        const std::uint16_t requested_count = read_u16(payload, 48);
+
+        crypto::Byte response_status = sync_status_ok;
+        std::vector<crypto::Bytes> encoded_blocks;
+        if (requested_count == 0 ||
+            requested_count > network::maximum_blocks_per_sync_batch) {
+            response_status = sync_status_invalid_request;
+        } else {
+            std::lock_guard lock{state_mutex_};
+            const auto& blocks = chain_store_->blockchain().blocks();
+            if (locator_height >= blocks.size() ||
+                blocks[static_cast<std::size_t>(locator_height)].id() != locator_id) {
+                response_status = sync_status_locator_not_found;
+            } else {
+                const std::size_t first = static_cast<std::size_t>(locator_height) + 1;
+                const std::size_t last = std::min(
+                    blocks.size(),
+                    first + static_cast<std::size_t>(requested_count)
+                );
+                encoded_blocks.reserve(last - first);
+                for (std::size_t index = first; index < last; ++index) {
+                    encoded_blocks.push_back(blocks[index].serialize());
+                }
+            }
+        }
+
+        crypto::Bytes response;
+        append_u64(response, request_id);
+        response.push_back(response_status);
+        append_u16(response, static_cast<std::uint16_t>(encoded_blocks.size()));
+        for (const crypto::Bytes& encoded : encoded_blocks) {
+            append_u32(response, static_cast<std::uint32_t>(encoded.size()));
+            response.insert(response.end(), encoded.begin(), encoded.end());
+        }
+        static_cast<void>(network_->send(
+            peer_id,
+            network::MessageType::blocks,
+            response
+        ));
+        emit("sync_batch_sent", {
+            {"block_count", encoded_blocks.size()},
+            {"peer_id", peer_id},
+            {"request_id", request_id},
+            {"status", response_status},
+        });
+    }
+
+    void handle_blocks(
+        const std::uint64_t peer_id,
+        const crypto::ByteView payload
+    ) {
+        if (!chain_store_.has_value() || !network_.has_value() ||
+            payload.size() < network::blocks_payload_minimum_size) {
+            return;
+        }
+        const std::uint64_t request_id = read_u64(payload);
+        {
+            std::lock_guard lock{sync_mutex_};
+            if (!sync_peer_.has_value() || *sync_peer_ != peer_id ||
+                !pending_sync_request_.has_value() ||
+                *pending_sync_request_ != request_id || sync_state_ != "syncing") {
+                return;
+            }
+            pending_sync_request_.reset();
+        }
+
+        const crypto::Byte response_status = payload[8];
+        const std::uint16_t block_count = read_u16(payload, 9);
+        if (response_status != sync_status_ok) {
+            fail_sync(response_status == sync_status_locator_not_found
+                ? "locator_not_found" : "invalid_request");
+            return;
+        }
+        if (block_count > network::maximum_blocks_per_sync_batch) {
+            fail_sync("invalid_block_count");
+            return;
+        }
+
+        std::vector<chain::Block> blocks;
+        blocks.reserve(block_count);
+        std::size_t offset = network::blocks_payload_minimum_size;
+        for (std::uint16_t index = 0; index < block_count; ++index) {
+            if (payload.size() - offset < sizeof(std::uint32_t)) {
+                fail_sync("truncated_block_size");
+                return;
+            }
+            const std::uint32_t encoded_size = read_u32(payload, offset);
+            offset += sizeof(std::uint32_t);
+            if (encoded_size < chain::block_header_size ||
+                encoded_size > chain::maximum_block_size ||
+                payload.size() - offset < encoded_size) {
+                fail_sync("invalid_block_size");
+                return;
+            }
+            chain::BlockResult decoded = chain::deserialize_block(
+                payload.subspan(offset, encoded_size)
+            );
+            if (!decoded.has_value()) {
+                fail_sync("invalid_block");
+                return;
+            }
+            blocks.push_back(std::move(decoded).value());
+            offset += encoded_size;
+        }
+        if (offset != payload.size()) {
+            fail_sync("trailing_payload_data");
+            return;
+        }
+
+        for (const chain::Block& block : blocks) {
+            storage::ChainStoreAppendResult appended;
+            {
+                std::lock_guard lock{state_mutex_};
+                appended = chain_store_->append(block);
+                if (appended.has_value() && mempool_store_.has_value()) {
+                    const storage::MempoolStoreRevalidationResult revalidated =
+                        mempool_store_->revalidate(chain_store_->blockchain().state());
+                    if (!revalidated.has_value()) {
+                        emit("mempool_revalidation_failed", {});
+                    }
+                }
+            }
+            if (!appended.has_value()) {
+                fail_sync(appended.storage_error == storage::ChainStoreError::none
+                    ? chain::chain_error_message(appended.chain_result.error)
+                    : storage::chain_store_error_message(appended.storage_error));
+                return;
+            }
+            const crypto::Hash256 block_id = block.id();
+            network_->update_tip(block.height(), block_id);
+            {
+                std::lock_guard lock{sync_mutex_};
+                ++sync_received_blocks_;
+            }
+            emit("sync_block_applied", {
+                {"block_id", crypto::to_upper_hex(block_id)},
+                {"height", block.height()},
+                {"peer_id", peer_id},
+            });
+        }
+
+        std::uint64_t local_height = 0;
+        crypto::Hash256 local_tip{};
+        {
+            std::lock_guard lock{state_mutex_};
+            local_height = chain_store_->blockchain().tip().height();
+            local_tip = chain_store_->blockchain().tip().id();
+        }
+        bool complete = false;
+        bool invalid_tip = false;
+        {
+            std::lock_guard lock{sync_mutex_};
+            if (!sync_target_height_.has_value() || !sync_target_tip_.has_value()) {
+                invalid_tip = true;
+            } else if (local_height == *sync_target_height_) {
+                complete = local_tip == *sync_target_tip_;
+                invalid_tip = !complete;
+                if (complete) {
+                    sync_state_ = "complete";
+                }
+            } else if (local_height > *sync_target_height_) {
+                invalid_tip = true;
+            }
+        }
+        if (complete) {
+            emit("sync_complete", {
+                {"height", local_height},
+                {"peer_id", peer_id},
+                {"tip", crypto::to_upper_hex(local_tip)},
+            });
+            return;
+        }
+        if (invalid_tip) {
+            fail_sync("unexpected_target_tip");
+            return;
+        }
+        if (block_count == 0) {
+            fail_sync("empty_batch_before_target");
+            return;
+        }
+        send_sync_request(peer_id);
     }
 
     void send_transaction_result(
@@ -993,6 +1366,7 @@ private:
     mutable std::mutex state_mutex_;
     mutable std::mutex mining_mutex_;
     mutable std::mutex transaction_mutex_;
+    mutable std::mutex sync_mutex_;
     std::thread mining_thread_;
     std::atomic_bool mining_cancelled_{false};
     std::atomic_bool mining_active_{false};
@@ -1012,6 +1386,13 @@ private:
     std::optional<crypto::Hash256> pending_transaction_id_;
     std::optional<std::uint64_t> pending_transaction_peer_;
     std::string transaction_state_ = "idle";
+    std::string sync_state_ = "idle";
+    std::uint64_t next_sync_request_ = 1;
+    std::optional<std::uint64_t> sync_peer_;
+    std::optional<std::uint64_t> pending_sync_request_;
+    std::optional<std::uint64_t> sync_target_height_;
+    std::optional<crypto::Hash256> sync_target_tip_;
+    std::uint64_t sync_received_blocks_ = 0;
 };
 
 nlohmann::json error_response(

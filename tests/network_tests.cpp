@@ -233,6 +233,31 @@ TEST_CASE("P2P transaction messages enforce canonical payload sizes", "[network]
     ).empty());
 }
 
+TEST_CASE("P2P synchronization messages enforce bounded payload sizes", "[network]") {
+    const bbc::crypto::Bytes request(bbc::network::get_blocks_payload_size, 0);
+    CHECK_FALSE(bbc::network::serialize_frame(
+        bbc::network::MessageType::get_blocks,
+        request
+    ).empty());
+    CHECK(bbc::network::serialize_frame(
+        bbc::network::MessageType::get_blocks,
+        bbc::crypto::ByteView{request}.first(request.size() - 1)
+    ).empty());
+
+    const bbc::crypto::Bytes empty_response(
+        bbc::network::blocks_payload_minimum_size,
+        0
+    );
+    CHECK_FALSE(bbc::network::serialize_frame(
+        bbc::network::MessageType::blocks,
+        empty_response
+    ).empty());
+    CHECK(bbc::network::serialize_frame(
+        bbc::network::MessageType::blocks,
+        bbc::crypto::ByteView{empty_response}.first(empty_response.size() - 1)
+    ).empty());
+}
+
 TEST_CASE("P2P frame headers reject malformed input before allocation", "[network]") {
     const bbc::crypto::Bytes payload = bbc::network::serialize_ping_nonce(5);
     bbc::crypto::Bytes frame = bbc::network::serialize_frame(

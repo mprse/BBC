@@ -134,6 +134,15 @@ public:
         return nonce;
     }
 
+    void update_tip(
+        const std::uint64_t height,
+        const crypto::Hash256& block_id
+    ) {
+        std::lock_guard lock{state_mutex_};
+        config_.tip_height = height;
+        config_.tip_block_id = block_id;
+    }
+
     [[nodiscard]] bool send(
         const std::uint64_t peer_id,
         const MessageType type,
@@ -545,6 +554,7 @@ private:
     };
 
     [[nodiscard]] HelloPayload local_hello() const {
+        std::lock_guard lock{state_mutex_};
         return HelloPayload{
             protocol_version,
             protocol_version,
@@ -828,6 +838,13 @@ bool PeerNetwork::connect(
 
 std::uint64_t PeerNetwork::ping_all() {
     return impl_->ping_all();
+}
+
+void PeerNetwork::update_tip(
+    const std::uint64_t height,
+    const crypto::Hash256& block_id
+) {
+    impl_->update_tip(height, block_id);
 }
 
 bool PeerNetwork::send(

@@ -220,7 +220,7 @@ interfaces over a single large executable target.
 - Once tests exist, a code change is not complete until the relevant build and
   test presets pass.
 
-For the current Stage 7.1 milestone, the minimum verification commands are:
+For the current Stage 7 milestone, the minimum verification commands are:
 
 ```console
 python tools/build.py test
