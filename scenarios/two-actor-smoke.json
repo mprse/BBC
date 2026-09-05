@@ -2,7 +2,6 @@
   "schema_version": 1,
   "name": "two-actor-smoke",
   "network": {
-    "profile": "development",
     "step_timeout_ms": 10000
   },
   "actors": [

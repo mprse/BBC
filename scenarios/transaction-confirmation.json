@@ -1,10 +1,7 @@
 {
   "schema_version": 1,
-  "name": "transaction-confirmation-development",
-  "network": {
-    "profile": "development",
-    "step_timeout_ms": 300000
-  },
+  "name": "transaction-confirmation",
+  "network": {},
   "actors": [
     {
       "name": "full-a",

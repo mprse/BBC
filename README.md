@@ -403,7 +403,7 @@ Transaction and block propagation are not part of Stage 7.1.
 Run the reward-and-payment scenario:
 
 ```console
-python tools/scenario.py scenarios/transaction-propagation-regtest.json --no-ui
+python tools/scenario.py scenarios/transaction-propagation.json --regtest --no-ui
 ```
 
 Two miners race for the first reward. The winning wallet signs a payment and
@@ -417,14 +417,14 @@ by [`docs/adr/0011-transaction-propagation.md`](docs/adr/0011-transaction-propag
 Run the complete fast confirmation flow through block 2:
 
 ```console
-python tools/scenario.py scenarios/transaction-confirmation-regtest.json --no-ui
+python tools/scenario.py scenarios/transaction-confirmation.json --regtest --no-ui
 ```
 
 Use the development profile to watch both mining races at normal demonstration
 difficulty:
 
 ```console
-python tools/scenario.py scenarios/transaction-confirmation-development.json
+python tools/scenario.py scenarios/transaction-confirmation.json
 ```
 
 ## Stage 7.3: First network mining race
@@ -432,16 +432,16 @@ python tools/scenario.py scenarios/transaction-confirmation-development.json
 Run the fast automated profile:
 
 ```console
-python tools/scenario.py scenarios/mining-race-regtest.json --no-ui
+python tools/scenario.py scenarios/mining-race.json --regtest --no-ui
 ```
 
 Run the deliberately slower visible development race:
 
 ```console
-python tools/scenario.py scenarios/mining-race-development.json
+python tools/scenario.py scenarios/mining-race.json
 ```
 
-Both scenarios start one full node and two wallet miners. The first valid
+Both invocations start one full node and two wallet miners. The first valid
 height-1 block is persisted and rewarded; the competing miner stops with
 `stale_parent`. Network parameters and wire payloads are defined in
 `docs/network-profiles.md` and `docs/mining-protocol-v1.md`. A full node now
@@ -458,7 +458,7 @@ mempools. The architectural decision is recorded in
 Run the late-join and restart scenario:
 
 ```console
-python tools/scenario.py scenarios/late-join-sync-regtest.json --no-ui
+python tools/scenario.py scenarios/late-join-sync.json --regtest --no-ui
 ```
 
 The scenario advances `full-a` and `full-b` from Genesis through a reward block,

@@ -36,6 +36,7 @@ namespace bbc::node {
 namespace {
 
 constexpr std::size_t maximum_control_request_size = 64 * 1024;
+constexpr auto mining_progress_interval = std::chrono::seconds{5};
 constexpr crypto::Byte sync_status_ok = 0;
 constexpr crypto::Byte sync_status_locator_not_found = 1;
 constexpr crypto::Byte sync_status_invalid_request = 2;
@@ -590,7 +591,10 @@ private:
                     if (mining_cancelled_.load()) {
                         mining_active_.store(false);
                         set_mining_state("cancelled");
-                        emit("mining_cancelled", {{"reason", "stale_parent"}});
+                        emit("mining_cancelled", {
+                            {"height", candidate.height()},
+                            {"reason", "stale_parent"},
+                        });
                         return;
                     }
                     set_mining_state("running");
@@ -614,13 +618,17 @@ private:
                         emit("block_found", {
                             {"block_id", crypto::to_upper_hex(mined.id())},
                             {"attempts", mining_attempts_.load()},
+                            {"height", mined.height()},
                         });
                         static_cast<void>(network_->send(
                             peer_id,
                             network::MessageType::block_submit,
                             mined.serialize()
                         ));
-                        emit("block_submitted", {{"peer_id", peer_id}});
+                        emit("block_submitted", {
+                            {"height", mined.height()},
+                            {"peer_id", peer_id},
+                        });
                         return;
                     }
                     if (!result.next_nonce().has_value()) {
@@ -630,14 +638,20 @@ private:
                     }
                     candidate = candidate.with_mining_nonce(*result.next_nonce());
                     const auto now = std::chrono::steady_clock::now();
-                    if (now - last_progress >= std::chrono::seconds{1}) {
-                        emit("mining_progress", {{"attempts", mining_attempts_.load()}});
+                    if (now - last_progress >= mining_progress_interval) {
+                        emit("mining_progress", {
+                            {"attempts", mining_attempts_.load()},
+                            {"height", candidate.height()},
+                        });
                         last_progress = now;
                     }
                 }
                 mining_active_.store(false);
                 set_mining_state("cancelled");
-                emit("mining_cancelled", {{"reason", "stale_parent"}});
+                emit("mining_cancelled", {
+                    {"height", candidate.height()},
+                    {"reason", "stale_parent"},
+                });
             }
         };
     }
@@ -836,7 +850,10 @@ private:
             }
             if (own_block) {
                 set_mining_state("accepted");
-                emit("mining_accepted", {{"block_id", crypto::to_upper_hex(id)}});
+                emit("mining_accepted", {
+                    {"block_id", crypto::to_upper_hex(id)},
+                    {"height", block.height()},
+                });
             }
             return;
         }
@@ -899,6 +916,7 @@ private:
         const bool accepted = payload[32] == 1;
         const std::uint16_t reason = static_cast<std::uint16_t>(payload[33]) |
             static_cast<std::uint16_t>(payload[34]) << 8U;
+        std::optional<std::uint64_t> result_height;
         {
             std::lock_guard lock{mining_mutex_};
             if (!found_block_id_.has_value() || *found_block_id_ != result_block_id) {
@@ -911,16 +929,25 @@ private:
                 mining_known_height_ = *mining_height_;
                 mining_known_tip_ = result_block_id;
             }
+            result_height = mining_height_;
             mining_state_ = accepted ? "accepted" : reason == 1
                 ? "cancelled" : "rejected";
+        }
+        nlohmann::json details{
+            {"block_id", crypto::to_upper_hex(result_block_id)},
+            {"reason_code", reason},
+        };
+        if (result_height.has_value()) {
+            details["height"] = *result_height;
+        }
+        if (!accepted) {
+            details["reason"] = reason == 1 ? "stale_parent" : "invalid_block";
         }
         emit(
             accepted ? "mining_accepted" : reason == 1
                 ? "mining_cancelled"
                 : "mining_rejected",
-            accepted ? nlohmann::json{{"reason_code", reason}}
-                : nlohmann::json{{"reason_code", reason}, {"reason", reason == 1
-                    ? "stale_parent" : "invalid_block"}}
+            std::move(details)
         );
     }
 

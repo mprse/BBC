@@ -1,10 +1,7 @@
 {
   "schema_version": 1,
-  "name": "late-join-sync-regtest",
-  "network": {
-    "profile": "regtest",
-    "step_timeout_ms": 15000
-  },
+  "name": "late-join-sync",
+  "network": {},
   "actors": [
     {
       "name": "full-a",

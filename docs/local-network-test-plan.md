@@ -135,7 +135,7 @@ as an input adapter if editing large scenarios becomes inconvenient.
 All names, fields, commands, output, and documentation remain English. A draft
 scenario has four sections:
 
-- `network`: profile, loopback range, timeouts, and random seed;
+- `network`: loopback range, timeouts, and random seed;
 - `actors`: roles, ports, initial peers, upstreams, and wallet fixture names;
 - `steps`: commands and condition-based barriers;
 - `assertions`: final consensus and actor-specific expectations.
@@ -147,7 +147,6 @@ Example shape:
   "schema_version": 1,
   "name": "eight-actor-payment",
   "network": {
-    "profile": "regtest",
     "random_seed": 7,
     "step_timeout_ms": 10000
   },
@@ -224,6 +223,11 @@ Example shape:
   ]
 }
 ```
+
+The scenario document is profile-independent. The runner uses `development`
+when no profile option is supplied and `regtest` when invoked with `--regtest`.
+It writes the effective profile into `scenario.resolved.json`; CTest always uses
+the explicit regtest option.
 
 Transaction recipients are actor names in the scenario. The runner resolves
 them to addresses learned after readiness. A scenario may define transactions

@@ -33,6 +33,7 @@ DEFAULT_EXECUTABLES = {
 }
 ACTOR_NAME = re.compile(r"^[A-Za-z0-9_-]{1,64}$")
 KNOWN_ROLES = {"wallet", "full_node", "miner"}
+PANEL_EVENT_ROWS = 10
 
 
 class ScenarioError(RuntimeError):
@@ -85,7 +86,9 @@ class Actor:
     control_port: int | None = None
     p2p_port: int | None = None
     ready: bool = False
-    events: deque[str] = field(default_factory=lambda: deque(maxlen=5))
+    events: deque[str] = field(
+        default_factory=lambda: deque(maxlen=PANEL_EVENT_ROWS)
+    )
 
 
 class Display:
@@ -95,18 +98,58 @@ class Display:
         self._controller = "Preparing scenario"
 
     def event(self, actor: Actor, line: str) -> None:
+        event = "message"
         try:
             message = json.loads(line)
             event = message.get("event", "message")
             details = message.get("details", {})
-            summary = f"{event}: {json.dumps(details, separators=(',', ':'))}"
+            summary = self._event_summary(event, details)
         except json.JSONDecodeError:
             summary = line
-        actor.events.append(summary)
+        if (
+            event == "mining_progress"
+            and actor.events
+            and actor.events[-1].startswith("[MINING]")
+        ):
+            actor.events[-1] = summary
+        else:
+            actor.events.append(summary)
         if self._plain:
             print(f"[{actor.name}] {summary}", flush=True)
         else:
             self.render()
+
+    @staticmethod
+    def _event_summary(event: str, details: Any) -> str:
+        if not isinstance(details, dict):
+            return f"{event}: {json.dumps(details, separators=(',', ':'))}"
+
+        height = details.get("height", "?")
+        block_id = details.get("block_id")
+        short_id = f"{block_id[:12]}..." if isinstance(block_id, str) else "?"
+        attempts = details.get("attempts")
+        encoded_attempts = f"{attempts:,}" if isinstance(attempts, int) else "?"
+        if event == "mining_progress":
+            return f"[MINING] height={height} attempts={encoded_attempts}"
+        if event == "block_found":
+            return (
+                f"[BLOCK MINED] height={height} id={short_id} "
+                f"attempts={encoded_attempts}"
+            )
+        if event == "block_accepted":
+            return (
+                f"[BLOCK ACCEPTED] height={height} id={short_id} "
+                f"peer={details.get('peer_id', '?')}"
+            )
+        if event == "block_rejected":
+            return f"[BLOCK REJECTED] id={short_id} reason={details.get('reason', '?')}"
+        if event == "mining_accepted":
+            return f"[MINER WON] height={height} id={short_id}"
+        if event == "mining_cancelled":
+            return f"[MINER STOPPED] height={height} reason={details.get('reason', '?')}"
+        if event == "mining_rejected":
+            return f"[MINER REJECTED] height={height} reason={details.get('reason', '?')}"
+        return f"{event}: {json.dumps(details, separators=(',', ':'))}"
 
     def controller(self, message: str) -> None:
         self._controller = message
@@ -120,18 +163,21 @@ class Display:
         columns = 3 if width >= 150 else 2 if width >= 100 else 1
         cell_width = max(20, width // columns - 1)
         panels: list[list[str]] = []
+        panel_height = PANEL_EVENT_ROWS + 1
         for actor in self._actors:
             state = "ready" if actor.ready else "starting"
             title = f" {actor.name} [{state}] "
             lines = [title.center(cell_width, "-"), *actor.events]
-            while len(lines) < 6:
+            while len(lines) < panel_height:
                 lines.append("")
-            panels.append([line[:cell_width].ljust(cell_width) for line in lines[:6]])
+            panels.append(
+                [line[:cell_width].ljust(cell_width) for line in lines[:panel_height]]
+            )
 
         output = ["\x1b[2J\x1b[H", f"BBC scenario: {self._controller}"[:width], ""]
         for start in range(0, len(panels), columns):
             row = panels[start : start + columns]
-            for line_index in range(6):
+            for line_index in range(panel_height):
                 output.append(" ".join(panel[line_index] for panel in row))
             output.append("")
         print("\n".join(output), end="", flush=True)
@@ -141,6 +187,11 @@ def parse_arguments() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Run a local BBC network scenario.")
     parser.add_argument("scenario", type=Path, help="JSON scenario file")
     parser.add_argument("--executable", type=Path, help="path to the built bbc executable")
+    parser.add_argument(
+        "--regtest",
+        action="store_true",
+        help="use the fast isolated regtest profile instead of development",
+    )
     parser.add_argument("--no-ui", action="store_true", help="use prefixed line output")
     parser.add_argument(
         "--keep",
@@ -1284,7 +1335,11 @@ def main() -> int:
     network = document.get("network", {})
     if not isinstance(network, dict):
         raise ScenarioError("Scenario network must be an object.")
-    timeout_ms = network.get("step_timeout_ms", 10_000)
+    network_profile = "regtest" if arguments.regtest else "development"
+    network["profile"] = network_profile
+    document["network"] = network
+    default_timeout_ms = 15_000 if arguments.regtest else 300_000
+    timeout_ms = network.get("step_timeout_ms", default_timeout_ms)
     if not isinstance(timeout_ms, int) or timeout_ms <= 0 or timeout_ms > 300_000:
         raise ScenarioError("step_timeout_ms must be between 1 and 300000.")
     timeout_seconds = timeout_ms / 1000
@@ -1296,7 +1351,12 @@ def main() -> int:
     display = Display(actors, arguments.no_ui)
     output_queue: queue.Queue[tuple[Actor, str]] = queue.Queue()
     success = False
-    summary: dict[str, Any] = {"scenario": name, "run_id": run_id, "success": False}
+    summary: dict[str, Any] = {
+        "scenario": name,
+        "network": network_profile,
+        "run_id": run_id,
+        "success": False,
+    }
     try:
         (run_directory / "scenario.resolved.json").write_text(
             json.dumps(document, indent=2) + "\n",

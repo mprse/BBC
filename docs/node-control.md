@@ -129,7 +129,16 @@ Use `--no-ui` for prefixed line output in CI or redirected terminals:
 python tools/scenario.py scenarios/two-actor-smoke.json --no-ui
 ```
 
-The runner validates the JSON document, creates one private directory and random
+Scenario files are shared by both network profiles. With no profile option the
+runner uses `development`. Add `--regtest` for the fast, isolated profile used
+by CTest:
+
+```console
+python tools/scenario.py scenarios/mining-race.json --regtest --no-ui
+```
+
+The runner validates the JSON document, records the effective profile in the
+resolved scenario, creates one private directory and random
 control token per actor, starts all subprocesses, waits for explicit `ready`
 events, requests final dumps, evaluates assertions, requests graceful shutdown,
 and returns nonzero on failure. Actor `peers` entries name other full-node
@@ -141,6 +150,12 @@ Windows it first enables Virtual Terminal processing. If the current console
 does not support that mode, the runner automatically falls back to plain output
 with `[actor-name]` prefixes instead of printing raw ANSI escape sequences. Both
 modes use exactly the same scenario execution and assertions.
+
+Each interactive actor panel retains ten event rows. Consecutive
+`mining_progress` updates replace the previous progress row instead of consuming
+the panel history. Mining outcomes use prominent `BLOCK MINED`,
+`BLOCK ACCEPTED`, `MINER WON`, and `MINER STOPPED` labels so the winning miner,
+validating full nodes, and cancelled workers remain visible together.
 
 Implemented steps are:
 

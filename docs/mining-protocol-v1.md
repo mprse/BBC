@@ -51,8 +51,9 @@ A rejected solution does not disconnect the miner.
 ## 3. Cancellable work
 
 The miner searches in batches of 10,000 nonces. Between batches it checks a
-cancellation flag. It emits progress at most once per second. Finding a valid
-hash emits `block_found` and `block_submitted` and sends `BLOCK_SUBMIT`.
+cancellation flag. It emits progress at most once every five seconds, including
+the candidate height and cumulative attempt count. Finding a valid hash emits
+`block_found` and `block_submitted` and sends `BLOCK_SUBMIT`.
 
 For multi-miner scenarios, the test-control plane may defer work after the
 template has been validated. The runner waits until all selected miners are
@@ -69,18 +70,19 @@ merged.
 
 ## 4. Scenarios
 
-`mining-race-regtest.json` is an automated test using real low-difficulty PoW.
-`mining-race-development.json` uses the normal development target and is the
-visible demonstration. Both start one full node and two wallet miners from their
-profile-specific Genesis Block, start both workers, require height 1, and require
-exactly one accepted miner and one cancelled miner.
+`mining-race.json` is shared by both profiles. With `--regtest` it is an
+automated test using real low-difficulty PoW; without that option it uses the
+normal development target as the visible demonstration. Both invocations start
+one full node and two wallet miners from their profile-specific Genesis Block,
+start both workers, require height 1, and require exactly one accepted miner and
+one cancelled miner.
 
-`transaction-propagation-regtest.json` continues from the same race. Its winner
+`transaction-propagation.json` continues from the same race. Its winner
 submits a signed payment, both full nodes converge on one pending transaction,
 and subsequent templates include that mempool selection.
 
-`transaction-confirmation-regtest.json` runs the second race and verifies that
+`transaction-confirmation.json` runs the second race and verifies that
 the height-2 winner confirms the payment. Both full nodes must converge on the
 same tip and account state, expose empty mempools, and report one transaction in
-the tip. `transaction-confirmation-development.json` exercises the same flow at
-the deliberately slower demonstration difficulty and is not part of CTest.
+the tip. CTest passes `--regtest`; running the same file without that flag
+exercises the deliberately slower demonstration difficulty.

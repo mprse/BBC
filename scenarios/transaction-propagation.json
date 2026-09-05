@@ -1,10 +1,7 @@
 {
   "schema_version": 1,
-  "name": "transaction-confirmation-regtest",
-  "network": {
-    "profile": "regtest",
-    "step_timeout_ms": 15000
-  },
+  "name": "transaction-propagation",
+  "network": {},
   "actors": [
     {
       "name": "full-a",
@@ -54,29 +51,17 @@
       "nonce": 0
     },
     {"wait": "transaction_propagated"},
-    {"command": "start_mining", "actors": ["miner-a", "miner-b"]},
-    {"wait": "mining_complete", "height": 2},
     {"command": "dump", "actors": "all"}
   ],
   "assertions": [
     {"all_ready": true},
     {"same_tip": ["full-a", "full-b"]},
-    {"same_state": ["full-a", "full-b"]},
-    {"height": {"actors": ["full-a", "full-b"], "value": 2}},
-    {"tip_transaction_count": {"actors": ["full-a", "full-b"], "value": 1}},
-    {"mempool_size": 0},
+    {"height": {"actors": ["full-a", "full-b"], "value": 1}},
+    {"mempool_size": 1},
     {"same_mempool": ["full-a", "full-b"]},
     {"peer_count": {"actor": "full-a", "value": 3}},
     {"peer_count": {"actor": "full-b", "value": 1}},
     {"mining_outcome": {"actors": ["miner-a", "miner-b"]}},
-    {
-      "payment_confirmed": {
-        "full_nodes": ["full-a", "full-b"],
-        "recipient": "receiver",
-        "amount": 1000000000,
-        "fee": 1000,
-        "block_reward": 5000000000
-      }
-    }
+    {"winner_reward": {"miners": ["miner-a", "miner-b"], "full_node": "full-a", "amount": 5000000000}}
   ]
 }

@@ -119,8 +119,9 @@ if(BUILD_TESTING)
         COMMAND
             "${Python3_EXECUTABLE}"
             "${CMAKE_SOURCE_DIR}/tools/scenario.py"
-            "${CMAKE_SOURCE_DIR}/scenarios/mining-race-regtest.json"
+            "${CMAKE_SOURCE_DIR}/scenarios/mining-race.json"
             --executable "$<TARGET_FILE:bbc>"
+            --regtest
             --no-ui
     )
     set_tests_properties(BBC.local-mining-race-regtest PROPERTIES TIMEOUT 30)
@@ -130,8 +131,9 @@ if(BUILD_TESTING)
         COMMAND
             "${Python3_EXECUTABLE}"
             "${CMAKE_SOURCE_DIR}/tools/scenario.py"
-            "${CMAKE_SOURCE_DIR}/scenarios/transaction-propagation-regtest.json"
+            "${CMAKE_SOURCE_DIR}/scenarios/transaction-propagation.json"
             --executable "$<TARGET_FILE:bbc>"
+            --regtest
             --no-ui
     )
     set_tests_properties(
@@ -144,8 +146,9 @@ if(BUILD_TESTING)
         COMMAND
             "${Python3_EXECUTABLE}"
             "${CMAKE_SOURCE_DIR}/tools/scenario.py"
-            "${CMAKE_SOURCE_DIR}/scenarios/transaction-confirmation-regtest.json"
+            "${CMAKE_SOURCE_DIR}/scenarios/transaction-confirmation.json"
             --executable "$<TARGET_FILE:bbc>"
+            --regtest
             --no-ui
     )
     set_tests_properties(
@@ -158,8 +161,9 @@ if(BUILD_TESTING)
         COMMAND
             "${Python3_EXECUTABLE}"
             "${CMAKE_SOURCE_DIR}/tools/scenario.py"
-            "${CMAKE_SOURCE_DIR}/scenarios/late-join-sync-regtest.json"
+            "${CMAKE_SOURCE_DIR}/scenarios/late-join-sync.json"
             --executable "$<TARGET_FILE:bbc>"
+            --regtest
             --no-ui
     )
     set_tests_properties(

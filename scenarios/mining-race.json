@@ -1,10 +1,7 @@
 {
   "schema_version": 1,
-  "name": "mining-race-development",
-  "network": {
-    "profile": "development",
-    "step_timeout_ms": 300000
-  },
+  "name": "mining-race",
+  "network": {},
   "actors": [
     {"name": "full-node", "roles": ["full_node"], "control": "127.0.0.1:0", "p2p": "127.0.0.1:0"},
     {"name": "miner-a", "roles": ["wallet", "miner"], "control": "127.0.0.1:0", "mining_source": "full-node"},
