@@ -398,6 +398,22 @@ and disconnect behavior are documented in
 [`docs/adr/0009-p2p-framing-and-handshake.md`](docs/adr/0009-p2p-framing-and-handshake.md).
 Transaction and block propagation are not part of Stage 7.1.
 
+## Stage 7.2: Signed transaction propagation
+
+Run the reward-and-payment scenario:
+
+```console
+python tools/scenario.py scenarios/transaction-propagation-regtest.json --no-ui
+```
+
+Two miners race for the first reward. The winning wallet signs a payment and
+submits its canonical 161-byte transaction to `full-a`. That node validates and
+persists it in its mempool, acknowledges the submitting wallet, and relays it to
+`full-b`. The scenario requires both full nodes to expose the same pending
+transaction ID. The wire messages and result codes are specified in
+[`docs/transaction-protocol-v1.md`](docs/transaction-protocol-v1.md) and accepted
+by [`docs/adr/0011-transaction-propagation.md`](docs/adr/0011-transaction-propagation.md).
+
 ## Stage 7.3: First network mining race
 
 Run the fast automated profile:
@@ -415,7 +431,8 @@ python tools/scenario.py scenarios/mining-race-development.json
 Both scenarios start one full node and two wallet miners. The first valid
 height-1 block is persisted and rewarded; the competing miner stops with
 `stale_parent`. Network parameters and wire payloads are defined in
-`docs/network-profiles.md` and `docs/mining-protocol-v1.md`.
+`docs/network-profiles.md` and `docs/mining-protocol-v1.md`. A full node now
+selects up to 1,000 pending transactions when it builds a later template.
 
 ## Visual Studio Code
 

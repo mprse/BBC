@@ -5,7 +5,8 @@
 Stage 7.0 introduced a long-running BBC actor process and a Python supervisor.
 Stage 7.1 adds a separate binary P2P listener for full-node actors, explicit
 scenario topology, handshake observation, ping checks, and reconnect tests.
-Stage 7.3 adds network profiles and scenario-controlled mining workers.
+Stage 7.2 adds signed transaction submission and mempool convergence. Stage 7.3
+adds network profiles and scenario-controlled mining workers.
 
 ## Actor command
 
@@ -45,10 +46,12 @@ contain between 32 and 256 characters.
 The scenario wallet is ephemeral and exists only in actor memory. A full-node
 actor initializes profile-specific Genesis in its empty private data directory
 or validates and opens an existing store. Stage 7.3 adds outbound-only mining
-workers and the `start_mining` control action. Persistent scenario wallets and
-transaction submission remain later increments. P2P behavior is defined in
+workers and the `start_mining` control action. A networked wallet can sign and
+submit one transaction through `submit_transaction`; persistent scenario
+wallets and automatic nonce lookup remain later increments. P2P behavior is defined in
 [`p2p-protocol-v1.md`](p2p-protocol-v1.md) and
-[`mining-protocol-v1.md`](mining-protocol-v1.md).
+[`mining-protocol-v1.md`](mining-protocol-v1.md), with transaction messages in
+[`transaction-protocol-v1.md`](transaction-protocol-v1.md).
 
 ## Control protocol
 
@@ -88,7 +91,13 @@ Supported methods are:
   endpoint supplied in `params`;
 - `ping`: send a P2P `PING` to every handshaken peer and return its nonce;
 - `start_mining`: ask the miner's connected full node for a block template and
-  begin bounded mining work;
+  begin bounded mining work; the scenario runner supplies `defer_work: true` to
+  prepare a coordinated race;
+- `begin_mining`: release a prepared template at `start_at_unix_ms`; this
+  test-only barrier gives every selected miner the same start instant;
+- `submit_transaction`: sign a payment with the actor's in-memory wallet and
+  submit it to a handshaken full-node peer; parameters are `recipient`,
+  `amount`, `fee`, and `nonce`;
 - `shutdown`: acknowledge and stop the accept loop gracefully.
 
 Requests with missing fields, invalid JSON, an invalid token, or an unknown
@@ -140,15 +149,25 @@ Implemented steps are:
 - `{"wait": "pongs"}`;
 - `{"command": "start_mining", "actors": ["miner-a", "miner-b"]}`;
 - `{"wait": "mining_complete", "height": 1}`;
+- `{"command": "submit_transaction", "from": "mining_winner", "miners":
+  ["miner-a", "miner-b"], "to": "receiver", "amount": 1000000000,
+  "fee": 1000, "nonce": 0}`;
+- `{"wait": "transaction_propagated"}`;
 - `{"command": "restart", "actor": "node-b"}`;
 - `{"command": "dump", "actors": "all"}`.
 
 It implements `all_ready`, `same_tip`, exact `height`, full-node
-`mempool_size`, per-actor `peer_count`, `mining_outcome`, and `winner_reward`
-assertions. Restart preserves the
+`mempool_size`, `same_mempool`, per-actor `peer_count`, `mining_outcome`, and
+`winner_reward` assertions. Restart preserves the
 actor data directory and resolved P2P port, allowing configured peers to prove
 automatic reconnect. Unsupported future steps and assertions fail explicitly
 rather than being ignored.
+
+The scenario-level `start_mining` command is coordinated internally. The runner
+requests and validates every selected miner's template first, waits until all
+miners report `ready`, then schedules `begin_mining` for one shared near-future
+Unix-millisecond timestamp. This prevents an easy regtest solution from being
+accepted before another miner has even received its template.
 
 ## Artifacts
 

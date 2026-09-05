@@ -3,6 +3,7 @@
 #include "bbc/chain/block.hpp"
 #include "bbc/crypto/hash.hpp"
 #include "bbc/network/peer_network.hpp"
+#include "bbc/transaction/transaction.hpp"
 
 #include <asio.hpp>
 #include <catch2/catch_test_macros.hpp>
@@ -194,6 +195,42 @@ TEST_CASE("P2P PING and PONG preserve their nonce", "[network]") {
         REQUIRE(header.has_value());
         CHECK(header.value().type == type);
     }
+}
+
+TEST_CASE("P2P transaction messages enforce canonical payload sizes", "[network]") {
+    const bbc::crypto::Bytes transaction(
+        bbc::transaction::signed_transaction_size,
+        0xA5
+    );
+    for (const bbc::network::MessageType type : {
+             bbc::network::MessageType::transaction_submit,
+             bbc::network::MessageType::transaction,
+         }) {
+        const bbc::crypto::Bytes frame = bbc::network::serialize_frame(
+            type,
+            transaction
+        );
+        REQUIRE_FALSE(frame.empty());
+        const auto header = bbc::network::deserialize_frame_header(
+            std::span{frame}.first(bbc::network::frame_header_size)
+        );
+        REQUIRE(header.has_value());
+        CHECK(header.value().type == type);
+        CHECK(header.value().payload_length == transaction.size());
+    }
+
+    const bbc::crypto::Bytes result(
+        bbc::crypto::hash256_size + 3,
+        0x5A
+    );
+    CHECK_FALSE(bbc::network::serialize_frame(
+        bbc::network::MessageType::transaction_result,
+        result
+    ).empty());
+    CHECK(bbc::network::serialize_frame(
+        bbc::network::MessageType::transaction,
+        bbc::crypto::ByteView{transaction}.first(transaction.size() - 1)
+    ).empty());
 }
 
 TEST_CASE("P2P frame headers reject malformed input before allocation", "[network]") {

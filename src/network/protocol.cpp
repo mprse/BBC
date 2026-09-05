@@ -3,6 +3,7 @@
 #include "bbc/crypto/hash.hpp"
 #include "bbc/core/network.hpp"
 #include "bbc/chain/block.hpp"
+#include "bbc/transaction/transaction.hpp"
 
 #include <algorithm>
 #include <array>
@@ -85,6 +86,12 @@ std::optional<MessageType> decode_message_type(const std::uint16_t value) {
             return MessageType::block;
         case static_cast<std::uint16_t>(MessageType::block_result):
             return MessageType::block_result;
+        case static_cast<std::uint16_t>(MessageType::transaction_submit):
+            return MessageType::transaction_submit;
+        case static_cast<std::uint16_t>(MessageType::transaction):
+            return MessageType::transaction;
+        case static_cast<std::uint16_t>(MessageType::transaction_result):
+            return MessageType::transaction_result;
         default:
             return std::nullopt;
     }
@@ -106,6 +113,11 @@ bool valid_payload_size(const MessageType type, const std::size_t size) {
         case MessageType::block:
             return size >= chain::block_header_size && size <= chain::maximum_block_size;
         case MessageType::block_result:
+            return size == crypto::hash256_size + 3;
+        case MessageType::transaction_submit:
+        case MessageType::transaction:
+            return size == transaction::signed_transaction_size;
+        case MessageType::transaction_result:
             return size == crypto::hash256_size + 3;
     }
     return false;

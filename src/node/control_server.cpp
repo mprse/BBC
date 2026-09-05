@@ -9,6 +9,7 @@
 #include "bbc/network/protocol.hpp"
 #include "bbc/storage/chain_store.hpp"
 #include "bbc/storage/mempool_store.hpp"
+#include "bbc/transaction/transaction.hpp"
 #include "bbc/wallet/address.hpp"
 #include "bbc/wallet/wallet.hpp"
 
@@ -104,6 +105,7 @@ public:
                          << storage::mempool_store_error_message(mempool.error()) << '\n';
             return false;
         }
+        mempool_store_.emplace(std::move(mempool).value());
         return true;
     }
 
@@ -202,7 +204,10 @@ public:
         return network_->ping_all();
     }
 
-    [[nodiscard]] bool start_mining(std::string& error) {
+    [[nodiscard]] bool start_mining(
+        const bool defer_work,
+        std::string& error
+    ) {
         if (!config_.has_role(ActorRole::miner) || !wallet_.has_value() ||
             !network_.has_value()) {
             error = "Actor is not a networked wallet miner.";
@@ -211,6 +216,15 @@ public:
         if (mining_active_.load()) {
             error = "Mining is already active.";
             return false;
+        }
+        {
+            std::lock_guard lock{mining_mutex_};
+            if (pending_template_request_.has_value() ||
+                prepared_mining_candidate_.has_value() ||
+                mining_state_ == "submitted") {
+                error = "Mining work is already pending.";
+                return false;
+            }
         }
         const auto peers = network_->peers();
         const auto source = std::ranges::find_if(peers, [](const auto& peer) {
@@ -234,15 +248,120 @@ public:
             std::lock_guard lock{mining_mutex_};
             mining_source_peer_ = source->id;
             pending_template_request_ = request_id;
+            defer_mining_start_ = defer_work;
+            mining_state_ = "preparing";
         }
         if (!network_->send(source->id, network::MessageType::template_request, payload)) {
             std::lock_guard lock{mining_mutex_};
             mining_source_peer_.reset();
             pending_template_request_.reset();
+            defer_mining_start_ = false;
+            mining_state_ = "idle";
             error = "Could not send the block template request.";
             return false;
         }
         emit("mining_template_requested", {{"peer_id", source->id}});
+        return true;
+    }
+
+    [[nodiscard]] bool begin_mining(
+        const std::uint64_t start_at_unix_ms,
+        std::string& error
+    ) {
+        std::optional<chain::Block> candidate;
+        std::optional<std::uint64_t> source_peer;
+        {
+            std::lock_guard lock{mining_mutex_};
+            if (!prepared_mining_candidate_.has_value() ||
+                !prepared_mining_peer_.has_value()) {
+                error = "Miner has no prepared block template.";
+                return false;
+            }
+            candidate.emplace(std::move(*prepared_mining_candidate_));
+            source_peer = prepared_mining_peer_;
+            prepared_mining_candidate_.reset();
+            prepared_mining_peer_.reset();
+        }
+        launch_mining(
+            *source_peer,
+            std::move(*candidate),
+            std::chrono::system_clock::time_point{
+                std::chrono::milliseconds{
+                    static_cast<std::int64_t>(start_at_unix_ms)
+                }
+            }
+        );
+        return true;
+    }
+
+    [[nodiscard]] bool submit_transaction(
+        const wallet::Address& recipient,
+        const std::uint64_t amount,
+        const std::uint64_t fee,
+        const std::uint64_t account_nonce,
+        std::string& error,
+        crypto::Hash256& transaction_id
+    ) {
+        if (!wallet_.has_value() || !network_.has_value()) {
+            error = "Actor is not a networked wallet.";
+            return false;
+        }
+        const auto peers = network_->peers();
+        const auto full_node = std::ranges::find_if(peers, [](const auto& peer) {
+            return peer.handshake_complete &&
+                (peer.services & network::full_node_service) != 0;
+        });
+        if (full_node == peers.end()) {
+            error = "Wallet has no connected full node.";
+            return false;
+        }
+        {
+            std::lock_guard lock{transaction_mutex_};
+            if (transaction_state_ == "submitted") {
+                error = "Wallet already has a pending transaction submission.";
+                return false;
+            }
+        }
+        transaction::TransactionResult signed_transaction =
+            transaction::sign_transaction(
+                *wallet_,
+                {
+                    recipient,
+                    amount,
+                    fee,
+                    account_nonce,
+                    core::network_parameters(config_.network_profile).chain_id,
+                }
+            );
+        if (!signed_transaction.has_value()) {
+            error = std::string{transaction::transaction_error_message(
+                signed_transaction.error()
+            )};
+            return false;
+        }
+        transaction_id = signed_transaction.value().id();
+        {
+            std::lock_guard lock{transaction_mutex_};
+            pending_transaction_id_ = transaction_id;
+            pending_transaction_peer_ = full_node->id;
+            transaction_state_ = "submitted";
+        }
+        if (!network_->send(
+                full_node->id,
+                network::MessageType::transaction_submit,
+                signed_transaction.value().serialize()
+            )) {
+            std::lock_guard lock{transaction_mutex_};
+            pending_transaction_id_.reset();
+            pending_transaction_peer_.reset();
+            transaction_state_ = "idle";
+            error = "Could not send the transaction.";
+            return false;
+        }
+        emit("transaction_submitted", {
+            {"transaction_id", crypto::to_upper_hex(transaction_id)},
+            {"peer_id", full_node->id},
+        });
         return true;
     }
 
@@ -260,19 +379,22 @@ public:
         if (chain_store_.has_value()) {
             std::lock_guard lock{state_mutex_};
             const chain::Blockchain& blockchain = chain_store_->blockchain();
-            storage::MempoolStoreResult mempool = storage::MempoolStore::open(
-                config_.data_directory,
-                blockchain.state()
-            );
             result["chain"] = {
                 {"height", blockchain.tip().height()},
                 {"tip", crypto::to_upper_hex(blockchain.tip().id())},
                 {"block_count", blockchain.block_count()},
                 {"account_count", blockchain.state().account_count()},
             };
-            result["chain"]["mempool_size"] = mempool.has_value()
-                ? nlohmann::json(mempool.value().mempool().size())
+            result["chain"]["mempool_size"] = mempool_store_.has_value()
+                ? nlohmann::json(mempool_store_->mempool().size())
                 : nlohmann::json(nullptr);
+            if (include_accounts && mempool_store_.has_value()) {
+                nlohmann::json pending = nlohmann::json::array();
+                for (const auto& value : mempool_store_->mempool().transactions()) {
+                    pending.push_back(crypto::to_upper_hex(value.id()));
+                }
+                result["chain"]["mempool_transactions"] = std::move(pending);
+            }
             if (include_accounts) {
                 nlohmann::json accounts = nlohmann::json::array();
                 for (const auto& [address_hash, account] : blockchain.state().accounts()) {
@@ -293,6 +415,15 @@ public:
                 {"active", mining_active_.load()},
                 {"attempts", mining_attempts_.load()},
                 {"state", mining_state_},
+            };
+        }
+        if (wallet_.has_value()) {
+            std::lock_guard lock{transaction_mutex_};
+            result["transaction"] = {
+                {"state", transaction_state_},
+                {"id", pending_transaction_id_.has_value()
+                    ? nlohmann::json(crypto::to_upper_hex(*pending_transaction_id_))
+                    : nlohmann::json(nullptr)},
             };
         }
         if (network_.has_value()) {
@@ -357,6 +488,97 @@ private:
         mining_state_ = state;
     }
 
+    void launch_mining(
+        const std::uint64_t peer_id,
+        chain::Block candidate,
+        const std::optional<std::chrono::system_clock::time_point> start_at
+    ) {
+        if (mining_thread_.joinable()) {
+            mining_cancelled_.store(true);
+            mining_thread_.join();
+        }
+        mining_cancelled_.store(false);
+        mining_active_.store(true);
+        mining_attempts_.store(0);
+        {
+            std::lock_guard lock{mining_mutex_};
+            found_block_id_.reset();
+        }
+        if (start_at.has_value() && *start_at > std::chrono::system_clock::now()) {
+            set_mining_state("scheduled");
+            emit("mining_scheduled", {
+                {"height", candidate.height()},
+                {"start_at_unix_ms", std::chrono::duration_cast<std::chrono::milliseconds>(
+                    start_at->time_since_epoch()
+                ).count()},
+            });
+        } else {
+            set_mining_state("running");
+            emit("mining_started", {
+                {"height", candidate.height()},
+                {"batch_size", 10000},
+            });
+        }
+        mining_thread_ = std::thread{
+            [this, peer_id, candidate = std::move(candidate), start_at]() mutable {
+                if (start_at.has_value() &&
+                    *start_at > std::chrono::system_clock::now()) {
+                    std::this_thread::sleep_until(*start_at);
+                    if (mining_cancelled_.load()) {
+                        mining_active_.store(false);
+                        set_mining_state("cancelled");
+                        emit("mining_cancelled", {{"reason", "stale_parent"}});
+                        return;
+                    }
+                    set_mining_state("running");
+                    emit("mining_started", {
+                        {"height", candidate.height()},
+                        {"batch_size", 10000},
+                    });
+                }
+                auto last_progress = std::chrono::steady_clock::now();
+                while (!mining_cancelled_.load()) {
+                    consensus::MiningResult result = consensus::mine_block(candidate, 10'000);
+                    mining_attempts_.fetch_add(result.attempts());
+                    if (result.has_value()) {
+                        const chain::Block mined = std::move(result).value();
+                        {
+                            std::lock_guard lock{mining_mutex_};
+                            found_block_id_ = mined.id();
+                        }
+                        mining_active_.store(false);
+                        set_mining_state("submitted");
+                        emit("block_found", {
+                            {"block_id", crypto::to_upper_hex(mined.id())},
+                            {"attempts", mining_attempts_.load()},
+                        });
+                        static_cast<void>(network_->send(
+                            peer_id,
+                            network::MessageType::block_submit,
+                            mined.serialize()
+                        ));
+                        emit("block_submitted", {{"peer_id", peer_id}});
+                        return;
+                    }
+                    if (!result.next_nonce().has_value()) {
+                        mining_active_.store(false);
+                        set_mining_state("failed");
+                        return;
+                    }
+                    candidate = candidate.with_mining_nonce(*result.next_nonce());
+                    const auto now = std::chrono::steady_clock::now();
+                    if (now - last_progress >= std::chrono::seconds{1}) {
+                        emit("mining_progress", {{"attempts", mining_attempts_.load()}});
+                        last_progress = now;
+                    }
+                }
+                mining_active_.store(false);
+                set_mining_state("cancelled");
+                emit("mining_cancelled", {{"reason", "stale_parent"}});
+            }
+        };
+    }
+
     void send_block_result(
         const std::uint64_t peer_id,
         const crypto::Hash256& block_id,
@@ -385,6 +607,12 @@ private:
             handle_block(peer_id, payload, false);
         } else if (type == network::MessageType::block_result) {
             handle_block_result(payload);
+        } else if (type == network::MessageType::transaction_submit) {
+            handle_transaction(peer_id, payload, true);
+        } else if (type == network::MessageType::transaction) {
+            handle_transaction(peer_id, payload, false);
+        } else if (type == network::MessageType::transaction_result) {
+            handle_transaction_result(peer_id, payload);
         }
     }
 
@@ -409,7 +637,11 @@ private:
                 tip.timestamp() + 1,
                 consensus::fixed_difficulty_target(tip.chain_id()),
                 0,
-                {},
+                mempool_store_.has_value()
+                    ? mempool_store_->mempool().select(
+                        chain::maximum_transactions_per_block
+                    )
+                    : std::vector<transaction::SignedTransaction>{},
                 tip.chain_id(),
             });
         }
@@ -462,65 +694,26 @@ private:
             emit("mining_template_rejected", {{"reason", "unexpected_template"}});
             return;
         }
+        bool defer_work = false;
+        chain::Block candidate = std::move(decoded).value();
         {
             std::lock_guard lock{mining_mutex_};
             pending_template_request_.reset();
-            mining_parent_ = decoded.value().previous_block_hash();
-            mining_height_ = decoded.value().height();
-        }
-        if (mining_thread_.joinable()) {
-            mining_cancelled_.store(true);
-            mining_thread_.join();
-        }
-        mining_cancelled_.store(false);
-        mining_active_.store(true);
-        mining_attempts_.store(0);
-        set_mining_state("running");
-        const auto height = decoded.value().height();
-        emit("mining_started", {{"height", height}, {"batch_size", 10000}});
-        mining_thread_ = std::thread{
-            [this, peer_id, candidate = std::move(decoded).value()]() mutable {
-                auto last_progress = std::chrono::steady_clock::now();
-                while (!mining_cancelled_.load()) {
-                    consensus::MiningResult result = consensus::mine_block(candidate, 10'000);
-                    mining_attempts_.fetch_add(result.attempts());
-                    if (result.has_value()) {
-                        const chain::Block mined = std::move(result).value();
-                        {
-                            std::lock_guard lock{mining_mutex_};
-                            found_block_id_ = mined.id();
-                        }
-                        mining_active_.store(false);
-                        set_mining_state("submitted");
-                        emit("block_found", {
-                            {"block_id", crypto::to_upper_hex(mined.id())},
-                            {"attempts", mining_attempts_.load()},
-                        });
-                        static_cast<void>(network_->send(
-                            peer_id,
-                            network::MessageType::block_submit,
-                            mined.serialize()
-                        ));
-                        emit("block_submitted", {{"peer_id", peer_id}});
-                        return;
-                    }
-                    if (!result.next_nonce().has_value()) {
-                        mining_active_.store(false);
-                        set_mining_state("failed");
-                        return;
-                    }
-                    candidate = candidate.with_mining_nonce(*result.next_nonce());
-                    const auto now = std::chrono::steady_clock::now();
-                    if (now - last_progress >= std::chrono::seconds{1}) {
-                        emit("mining_progress", {{"attempts", mining_attempts_.load()}});
-                        last_progress = now;
-                    }
-                }
-                mining_active_.store(false);
-                set_mining_state("cancelled");
-                emit("mining_cancelled", {{"reason", "stale_parent"}});
+            mining_parent_ = candidate.previous_block_hash();
+            mining_height_ = candidate.height();
+            defer_work = defer_mining_start_;
+            defer_mining_start_ = false;
+            if (defer_work) {
+                prepared_mining_candidate_.emplace(candidate);
+                prepared_mining_peer_ = peer_id;
+                mining_state_ = "ready";
             }
-        };
+        }
+        if (defer_work) {
+            emit("mining_ready", {{"height", candidate.height()}});
+            return;
+        }
+        launch_mining(peer_id, std::move(candidate), std::nullopt);
     }
 
     void handle_block(
@@ -571,6 +764,13 @@ private:
         {
             std::lock_guard lock{state_mutex_};
             appended = chain_store_->append(block);
+            if (appended.has_value() && mempool_store_.has_value()) {
+                const storage::MempoolStoreRevalidationResult revalidated =
+                    mempool_store_->revalidate(chain_store_->blockchain().state());
+                if (!revalidated.has_value()) {
+                    emit("mempool_revalidation_failed", {});
+                }
+            }
         }
         if (!appended.has_value()) {
             if (submission) {
@@ -633,6 +833,117 @@ private:
         );
     }
 
+    void send_transaction_result(
+        const std::uint64_t peer_id,
+        const crypto::Hash256& transaction_id,
+        const bool accepted,
+        const std::uint16_t reason
+    ) {
+        crypto::Bytes payload{transaction_id.begin(), transaction_id.end()};
+        payload.push_back(accepted ? 1 : 0);
+        payload.push_back(static_cast<crypto::Byte>(reason & 0xFFU));
+        payload.push_back(static_cast<crypto::Byte>(reason >> 8U));
+        static_cast<void>(network_->send(
+            peer_id,
+            network::MessageType::transaction_result,
+            payload
+        ));
+    }
+
+    void handle_transaction(
+        const std::uint64_t peer_id,
+        const crypto::ByteView payload,
+        const bool submission
+    ) {
+        if (!chain_store_.has_value() || !mempool_store_.has_value()) {
+            return;
+        }
+        transaction::TransactionResult decoded =
+            transaction::deserialize_transaction(payload);
+        if (!decoded.has_value()) {
+            if (submission) {
+                crypto::Hash256 empty{};
+                send_transaction_result(peer_id, empty, false, 1);
+            }
+            emit("transaction_rejected", {{"reason", "malformed_transaction"}});
+            return;
+        }
+        transaction::SignedTransaction value = std::move(decoded).value();
+        const crypto::Hash256 id = value.id();
+        if (value.chain_id() !=
+            core::network_parameters(config_.network_profile).chain_id) {
+            if (submission) {
+                send_transaction_result(peer_id, id, false, 2);
+            }
+            emit("transaction_rejected", {
+                {"transaction_id", crypto::to_upper_hex(id)},
+                {"reason", "wrong_chain"},
+            });
+            return;
+        }
+        storage::MempoolStoreAddResult added;
+        {
+            std::lock_guard lock{state_mutex_};
+            added = mempool_store_->add(std::move(value));
+        }
+        if (!added.has_value()) {
+            const bool duplicate =
+                added.storage_error == storage::MempoolStoreError::none &&
+                added.mempool_error == mempool::MempoolError::duplicate_transaction;
+            if (submission) {
+                send_transaction_result(peer_id, id, false, duplicate ? 3 : 4);
+            }
+            emit("transaction_rejected", {
+                {"transaction_id", crypto::to_upper_hex(id)},
+                {"reason", added.storage_error == storage::MempoolStoreError::none
+                    ? std::string{mempool::mempool_error_message(added.mempool_error)}
+                    : std::string{storage::mempool_store_error_message(
+                        added.storage_error
+                    )}},
+            });
+            return;
+        }
+        if (submission) {
+            send_transaction_result(peer_id, id, true, 0);
+        }
+        network_->broadcast(network::MessageType::transaction, payload, peer_id);
+        emit("transaction_accepted", {
+            {"transaction_id", crypto::to_upper_hex(id)},
+            {"peer_id", peer_id},
+        });
+        emit("transaction_relayed", {{"transaction_id", crypto::to_upper_hex(id)}});
+    }
+
+    void handle_transaction_result(
+        const std::uint64_t peer_id,
+        const crypto::ByteView payload
+    ) {
+        if (payload.size() != 35 || payload[32] > 1) {
+            return;
+        }
+        crypto::Hash256 id{};
+        std::ranges::copy(payload.first(32), id.begin());
+        const bool accepted = payload[32] == 1;
+        const std::uint16_t reason = static_cast<std::uint16_t>(payload[33]) |
+            static_cast<std::uint16_t>(payload[34]) << 8U;
+        {
+            std::lock_guard lock{transaction_mutex_};
+            if (!pending_transaction_id_.has_value() ||
+                *pending_transaction_id_ != id ||
+                !pending_transaction_peer_.has_value() ||
+                *pending_transaction_peer_ != peer_id ||
+                (accepted && reason != 0) || (!accepted && reason == 0)) {
+                return;
+            }
+            transaction_state_ = accepted ? "accepted" : "rejected";
+            pending_transaction_peer_.reset();
+        }
+        emit(accepted ? "transaction_accepted" : "transaction_rejected", {
+            {"transaction_id", crypto::to_upper_hex(id)},
+            {"reason_code", reason},
+        });
+    }
+
     [[nodiscard]] std::vector<std::string> role_names() const {
         std::vector<std::string> names;
         names.reserve(config_.roles.size());
@@ -645,10 +956,12 @@ private:
     NodeConfig config_;
     std::optional<wallet::Wallet> wallet_;
     std::optional<storage::ChainStore> chain_store_;
+    std::optional<storage::MempoolStore> mempool_store_;
     std::optional<network::PeerNetwork> network_;
     EventEmitter* events_ = nullptr;
     mutable std::mutex state_mutex_;
     mutable std::mutex mining_mutex_;
+    mutable std::mutex transaction_mutex_;
     std::thread mining_thread_;
     std::atomic_bool mining_cancelled_{false};
     std::atomic_bool mining_active_{false};
@@ -660,6 +973,12 @@ private:
     std::optional<crypto::Hash256> mining_parent_;
     std::optional<std::uint64_t> mining_height_;
     std::optional<crypto::Hash256> found_block_id_;
+    bool defer_mining_start_ = false;
+    std::optional<chain::Block> prepared_mining_candidate_;
+    std::optional<std::uint64_t> prepared_mining_peer_;
+    std::optional<crypto::Hash256> pending_transaction_id_;
+    std::optional<std::uint64_t> pending_transaction_peer_;
+    std::string transaction_state_ = "idle";
 };
 
 nlohmann::json error_response(
@@ -741,11 +1060,78 @@ nlohmann::json handle_request(
         };
     }
     if (method == "start_mining") {
+        bool defer_work = false;
+        if (request.contains("params")) {
+            if (!request["params"].is_object() ||
+                !request["params"].contains("defer_work") ||
+                !request["params"]["defer_work"].is_boolean()) {
+                return error_response(id, "invalid_params", "Invalid mining options.");
+            }
+            defer_work = request["params"]["defer_work"].get<bool>();
+        }
         std::string error;
-        if (!runtime.start_mining(error)) {
+        if (!runtime.start_mining(defer_work, error)) {
             return error_response(id, "mining_rejected", error);
         }
-        return {{"id", id}, {"ok", true}, {"result", {{"started", true}}}};
+        return {
+            {"id", id},
+            {"ok", true},
+            {"result", {{"preparing", defer_work}, {"started", !defer_work}}},
+        };
+    }
+    if (method == "begin_mining") {
+        if (!request.contains("params") || !request["params"].is_object() ||
+            !request["params"].contains("start_at_unix_ms") ||
+            !request["params"]["start_at_unix_ms"].is_number_unsigned()) {
+            return error_response(id, "invalid_params", "Invalid mining start time.");
+        }
+        const std::uint64_t start_at =
+            request["params"]["start_at_unix_ms"].get<std::uint64_t>();
+        const auto now = std::chrono::duration_cast<std::chrono::milliseconds>(
+            std::chrono::system_clock::now().time_since_epoch()
+        ).count();
+        if (start_at > static_cast<std::uint64_t>(now) + 5'000) {
+            return error_response(id, "invalid_params", "Mining start is too far ahead.");
+        }
+        std::string error;
+        if (!runtime.begin_mining(start_at, error)) {
+            return error_response(id, "mining_rejected", error);
+        }
+        return {{"id", id}, {"ok", true}, {"result", {{"scheduled", true}}}};
+    }
+    if (method == "submit_transaction") {
+        if (!request.contains("params") || !request["params"].is_object()) {
+            return error_response(id, "invalid_params", "Missing transaction fields.");
+        }
+        const nlohmann::json& params = request["params"];
+        if (!params.contains("recipient") || !params["recipient"].is_string() ||
+            !params.contains("amount") || !params["amount"].is_number_unsigned() ||
+            !params.contains("fee") || !params["fee"].is_number_unsigned() ||
+            !params.contains("nonce") || !params["nonce"].is_number_unsigned()) {
+            return error_response(id, "invalid_params", "Invalid transaction fields.");
+        }
+        const std::optional<wallet::Address> recipient =
+            wallet::Address::parse(params["recipient"].get_ref<const std::string&>());
+        if (!recipient.has_value()) {
+            return error_response(id, "invalid_params", "Invalid recipient address.");
+        }
+        std::string error;
+        crypto::Hash256 transaction_id{};
+        if (!runtime.submit_transaction(
+                *recipient,
+                params["amount"].get<std::uint64_t>(),
+                params["fee"].get<std::uint64_t>(),
+                params["nonce"].get<std::uint64_t>(),
+                error,
+                transaction_id
+            )) {
+            return error_response(id, "transaction_rejected", error);
+        }
+        return {
+            {"id", id},
+            {"ok", true},
+            {"result", {{"transaction_id", crypto::to_upper_hex(transaction_id)}}},
+        };
     }
     if (method == "shutdown") {
         stopping = true;

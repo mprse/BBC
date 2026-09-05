@@ -29,6 +29,9 @@ enum class MessageType : std::uint16_t {
     block_submit = 12,
     block = 13,
     block_result = 14,
+    transaction_submit = 20,
+    transaction = 21,
+    transaction_result = 22,
 };
 
 enum class ProtocolError {

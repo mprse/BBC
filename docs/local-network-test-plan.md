@@ -398,12 +398,19 @@ or final dumps.
 - `HELLO`, `PING`, and `PONG`;
 - explicit topology and reconnect tests.
 
-### Stage 7.2: Transaction propagation
+### Stage 7.2: Transaction propagation (first slice implemented)
 
 - wallet submission to a full node;
 - validation through the existing transaction and mempool layers;
 - transaction-ID deduplication and loop-free relay;
-- wait and rejection assertions.
+- convergence waits and exact mempool-ID assertions.
+
+The implemented first slice lets a networked wallet sign one transaction with
+an explicit nonce, submit it to a connected full node, receive an explicit
+acceptance result, and observe durable mempool convergence across full nodes.
+Duplicate relay is stopped by transaction-ID deduplication. Rejection scenarios,
+automatic nonce lookup, multiple concurrent wallet submissions, and wallet-only
+P2P clients remain follow-up work.
 
 ### Stage 7.3: Block propagation and mining workers (first slice implemented)
 
@@ -413,10 +420,11 @@ or final dumps.
 - full-node validation, persistence, mempool revalidation, and relay;
 - deterministic regtest flow from Genesis through a confirmed payment.
 
-The implemented first slice covers empty height-1 templates, two outbound-only
+The implemented slice covers height-1 reward-only templates, two outbound-only
 wallet miners, one authoritative full node, real batched Proof of Work, block
-submission, persistence, relay, and stale-work cancellation. Transaction-backed
-templates and the confirmed-payment flow remain follow-up work.
+submission, persistence, relay, and stale-work cancellation. Templates now
+select pending transactions from the full node's mempool. Mining and validating
+the transaction-backed height-2 block remains the next end-to-end increment.
 
 ### Stage 7.4: Initial synchronization
 

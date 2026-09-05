@@ -124,4 +124,18 @@ if(BUILD_TESTING)
             --no-ui
     )
     set_tests_properties(BBC.local-mining-race-regtest PROPERTIES TIMEOUT 30)
+
+    add_test(
+        NAME BBC.local-transaction-propagation-regtest
+        COMMAND
+            "${Python3_EXECUTABLE}"
+            "${CMAKE_SOURCE_DIR}/tools/scenario.py"
+            "${CMAKE_SOURCE_DIR}/scenarios/transaction-propagation-regtest.json"
+            --executable "$<TARGET_FILE:bbc>"
+            --no-ui
+    )
+    set_tests_properties(
+        BBC.local-transaction-propagation-regtest
+        PROPERTIES TIMEOUT 30
+    )
 endif()

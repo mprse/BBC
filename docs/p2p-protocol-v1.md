@@ -7,9 +7,10 @@
 
 This document defines the first binary peer-to-peer transport used between BBC
 full nodes. It covers TCP framing, connection establishment, version and network
-checks, liveness messages, resource limits, and disconnect behavior. Transaction,
-Transaction and synchronization payloads remain outside the implemented scope.
+checks, liveness messages, resource limits, and disconnect behavior.
+Transaction propagation is specified in `transaction-protocol-v1.md`, and
 Stage 7.3 mining payloads are specified in `mining-protocol-v1.md`.
+Initial chain synchronization remains outside the implemented scope.
 
 The protocol is public and unauthenticated. A valid frame checksum detects
 accidental corruption but does not prove who sent a message. Every transaction,
@@ -60,6 +61,9 @@ not attempt to reinterpret such a frame.
 | 12 | `BLOCK_SUBMIT` | 165..161165 bytes | No |
 | 13 | `BLOCK` | 165..161165 bytes | No |
 | 14 | `BLOCK_RESULT` | 35 bytes | No |
+| 20 | `TRANSACTION_SUBMIT` | 161 bytes | No |
+| 21 | `TRANSACTION` | 161 bytes | No |
+| 22 | `TRANSACTION_RESULT` | 35 bytes | No |
 
 Message type zero is invalid. Unknown message types cause a disconnect in wire
 version 1. A known message with the wrong payload length also causes a
@@ -174,7 +178,8 @@ token.
 
 Unit tests must cover:
 
-- fixed byte vectors for all three messages;
+- fixed byte vectors for `HELLO`, `PING`, and `PONG`;
+- canonical payload-size enforcement for transaction and mining messages;
 - one-byte-at-a-time header and payload delivery;
 - multiple frames in one input buffer;
 - bad magic, unsupported version, unknown type, oversized length, wrong fixed

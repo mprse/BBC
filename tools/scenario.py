@@ -621,6 +621,67 @@ def wait_for_mining(
         time.sleep(0.02)
 
 
+def wait_for_miners_ready(
+    miners: list[Actor],
+    output_queue: queue.Queue[tuple[Actor, str]],
+    display: Display,
+    timeout_seconds: float,
+) -> None:
+    deadline = time.monotonic() + timeout_seconds
+    request_id = 450_000
+    while True:
+        drain_events(output_queue, display)
+        states: list[str] = []
+        for actor in miners:
+            status = control_request(actor, request_id, "status", timeout_seconds)
+            request_id += 1
+            states.append(status["mining"]["state"])
+        if states and all(state == "ready" for state in states):
+            return
+        if time.monotonic() >= deadline:
+            raise ScenarioError(
+                f"Timed out preparing the mining race: states={states}."
+            )
+        time.sleep(0.02)
+
+
+def wait_for_transaction_propagation(
+    full_nodes: list[Actor],
+    sender: Actor,
+    expected_transaction_id: str,
+    output_queue: queue.Queue[tuple[Actor, str]],
+    display: Display,
+    timeout_seconds: float,
+) -> None:
+    deadline = time.monotonic() + timeout_seconds
+    request_id = 500_000
+    while True:
+        drain_events(output_queue, display)
+        sender_status = control_request(
+            sender, request_id, "status", timeout_seconds
+        )
+        request_id += 1
+        sizes: list[int] = []
+        for actor in full_nodes:
+            status = control_request(actor, request_id, "status", timeout_seconds)
+            request_id += 1
+            sizes.append(status["chain"]["mempool_size"])
+        transaction_status = sender_status.get("transaction", {})
+        if (
+            transaction_status.get("state") == "accepted"
+            and transaction_status.get("id") == expected_transaction_id
+            and sizes
+            and all(size == 1 for size in sizes)
+        ):
+            return
+        if time.monotonic() >= deadline:
+            raise ScenarioError(
+                "Timed out waiting for transaction propagation: "
+                f"sender={transaction_status}, mempools={sizes}."
+            )
+        time.sleep(0.02)
+
+
 def run_steps(
     steps: Any,
     actors: list[Actor],
@@ -634,6 +695,7 @@ def run_steps(
     started = False
     dumps: dict[str, Any] = {}
     expected_pongs: dict[str, int] = {}
+    submitted_transaction: tuple[Actor, str] | None = None
     request_id = 1
     for step in steps:
         if not isinstance(step, dict):
@@ -683,7 +745,7 @@ def run_steps(
             selected = actor_selection(step.get("actors"), actors)
             if any("miner" not in actor.roles for actor in selected):
                 raise ScenarioError("start_mining may target only miners.")
-            display.controller("Starting mining race")
+            display.controller("Preparing mining race")
             with ThreadPoolExecutor(max_workers=len(selected)) as executor:
                 futures = [
                     executor.submit(
@@ -692,6 +754,27 @@ def run_steps(
                         request_id + index,
                         "start_mining",
                         timeout_seconds,
+                        {"defer_work": True},
+                    )
+                    for index, actor in enumerate(selected)
+                ]
+                for future in futures:
+                    future.result()
+            request_id += len(selected)
+            wait_for_miners_ready(
+                selected, output_queue, display, timeout_seconds
+            )
+            start_at_unix_ms = int(time.time() * 1000) + 250
+            display.controller("Starting mining race")
+            with ThreadPoolExecutor(max_workers=len(selected)) as executor:
+                futures = [
+                    executor.submit(
+                        control_request,
+                        actor,
+                        request_id + index,
+                        "begin_mining",
+                        timeout_seconds,
+                        {"start_at_unix_ms": start_at_unix_ms},
                     )
                     for index, actor in enumerate(selected)
                 ]
@@ -707,6 +790,69 @@ def run_steps(
                 actors, output_queue, display, timeout_seconds, height
             )
             display.controller(f"Block {height} accepted; losing miners stopped")
+        elif step.get("command") == "submit_transaction":
+            sender_name = step.get("from")
+            if sender_name == "mining_winner":
+                miners = actor_selection(step.get("miners"), actors)
+                winners: list[Actor] = []
+                for actor in miners:
+                    status = control_request(
+                        actor, request_id, "status", timeout_seconds
+                    )
+                    request_id += 1
+                    if status["mining"]["state"] == "accepted":
+                        winners.append(actor)
+                if len(winners) != 1:
+                    raise ScenarioError("Could not resolve one mining winner.")
+                sender = winners[0]
+            elif isinstance(sender_name, str):
+                sender = actor_selection([sender_name], actors)[0]
+            else:
+                raise ScenarioError("submit_transaction requires a sender.")
+            recipient_name = step.get("to")
+            if not isinstance(recipient_name, str):
+                raise ScenarioError("submit_transaction requires a recipient actor.")
+            recipient = actor_selection([recipient_name], actors)[0]
+            recipient_status = control_request(
+                recipient, request_id, "status", timeout_seconds
+            )
+            request_id += 1
+            recipient_address = recipient_status.get("wallet_address")
+            if not isinstance(recipient_address, str):
+                raise ScenarioError(f"Actor {recipient.name} has no wallet address.")
+            amount = step.get("amount")
+            fee = step.get("fee")
+            nonce = step.get("nonce")
+            if any(not isinstance(value, int) or value < 0 for value in (amount, fee, nonce)):
+                raise ScenarioError("submit_transaction has invalid numeric fields.")
+            display.controller(f"Submitting transaction from {sender.name}")
+            result = control_request(
+                sender,
+                request_id,
+                "submit_transaction",
+                timeout_seconds,
+                {
+                    "recipient": recipient_address,
+                    "amount": amount,
+                    "fee": fee,
+                    "nonce": nonce,
+                },
+            )
+            request_id += 1
+            submitted_transaction = (sender, result["transaction_id"])
+        elif step.get("wait") == "transaction_propagated":
+            if submitted_transaction is None:
+                raise ScenarioError("No transaction was submitted.")
+            display.controller("Waiting for transaction propagation")
+            wait_for_transaction_propagation(
+                [actor for actor in actors if "full_node" in actor.roles],
+                submitted_transaction[0],
+                submitted_transaction[1],
+                output_queue,
+                display,
+                timeout_seconds,
+            )
+            display.controller("Transaction reached every full-node mempool")
         elif step.get("command") == "restart":
             name = step.get("actor")
             if not isinstance(name, str):
@@ -794,6 +940,14 @@ def run_assertions(assertions: Any, dumps: dict[str, Any], actors: list[Actor]) 
                         f"Assertion failed: {actor.name} mempool size is {actual}, "
                         f"expected {expected}."
                     )
+        elif "same_mempool" in assertion:
+            selected = actor_selection(assertion["same_mempool"], actors)
+            mempools = [
+                dumps[actor.name]["chain"]["mempool_transactions"]
+                for actor in selected
+            ]
+            if not mempools or any(value != mempools[0] for value in mempools[1:]):
+                raise ScenarioError(f"Full-node mempools differ: {mempools}.")
         elif "peer_count" in assertion:
             expected = assertion["peer_count"]
             if (

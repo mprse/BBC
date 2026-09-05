@@ -1,7 +1,7 @@
 # BBC Mining Protocol Version 1
 
 - Status: Accepted
-- Scope: Stage 7.3 first vertical slice
+- Scope: Stage 7.3
 
 ## 1. Topology and authority
 
@@ -25,10 +25,12 @@ All integers are unsigned little-endian. Blocks use the canonical encoding in
 | 13 | `BLOCK` | canonical block (165..161165) |
 | 14 | `BLOCK_RESULT` | block ID (32) + accepted (1) + reason (2) |
 
-The first slice creates an empty height-1 block because transaction propagation
-is not implemented yet. Its parent is the full node's current tip, timestamp is
-parent timestamp plus one, mining nonce is zero, target comes from the selected
-network profile, and reward address comes from the request.
+The full node selects up to 1,000 valid transactions from its current mempool.
+The height-1 mining-race scenario still produces a reward-only block because
+its mempool begins empty. Every template uses the current tip as its parent,
+sets timestamp to the parent timestamp plus one, starts the mining nonce at
+zero, uses the selected network profile target, and pays the requested reward
+address.
 
 `BLOCK_RESULT.accepted` is exactly 0 or 1. Reason codes are:
 
@@ -47,6 +49,12 @@ The miner searches in batches of 10,000 nonces. Between batches it checks a
 cancellation flag. It emits progress at most once per second. Finding a valid
 hash emits `block_found` and `block_submitted` and sends `BLOCK_SUBMIT`.
 
+For multi-miner scenarios, the test-control plane may defer work after the
+template has been validated. The runner waits until all selected miners are
+ready and releases them at one shared near-future timestamp. This barrier does
+not travel over P2P, alter the candidate block, or affect consensus; it only
+makes a low-difficulty regtest race exercise concurrent miners reliably.
+
 The full node atomically appends the first valid solution, replies with
 `BLOCK_RESULT`, and sends `BLOCK` to the other peers. A competing worker stops
 with reason `stale_parent` when it receives the accepted block. If it found and
@@ -61,3 +69,7 @@ merged.
 visible demonstration. Both start one full node and two wallet miners from their
 profile-specific Genesis Block, start both workers, require height 1, and require
 exactly one accepted miner and one cancelled miner.
+
+`transaction-propagation-regtest.json` continues from the same race. Its winner
+submits a signed payment, both full nodes converge on one pending transaction,
+and subsequent templates include that mempool selection.
