@@ -1,0 +1,24 @@
+{
+  "schema_version": 1,
+  "name": "node-b",
+  "network": "regtest",
+  "roles": ["wallet", "full_node"],
+  "wallet": {
+    "file": "../../recipient.wallet"
+  },
+  "data_directory": "../../node-b",
+  "full_node": {
+    "listen": {
+      "host": "127.0.0.1",
+      "port": 7443
+    },
+    "peers": []
+  },
+  "rpc": {
+    "listen": {
+      "host": "127.0.0.1",
+      "port": 7444
+    },
+    "token_file": "../../node-b.token"
+  }
+}

@@ -17,6 +17,8 @@ when a topic crosses subsystem boundaries.
   procedures for Windows, Linux, and an eventual EC2 host.
 - [`local-network-test-plan.md`](local-network-test-plan.md) explains actor roles,
   scenario files, execution, assertions, and artifacts.
+- [`persistent-network-test.md`](persistent-network-test.md) provides a manual
+  two-node flow through normal configuration and RPC commands.
 
 ## Data and consensus
 

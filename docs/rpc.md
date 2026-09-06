@@ -90,3 +90,7 @@ application API.
   implemented.
 - The user creates and signs `.bbctx` before `rpc submit`; a combined
   create-sign-submit command is not yet implemented.
+
+The manual [`persistent-network-test.md`](persistent-network-test.md) exercise
+runs two configured nodes through mining, payment confirmation, synchronization,
+and restart without using the scenario runner.

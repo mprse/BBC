@@ -1,0 +1,32 @@
+{
+  "schema_version": 1,
+  "name": "node-a",
+  "network": "regtest",
+  "roles": ["wallet", "full_node", "miner"],
+  "wallet": {
+    "file": "../../miner.wallet"
+  },
+  "data_directory": "../../node-a",
+  "full_node": {
+    "listen": {
+      "host": "127.0.0.1",
+      "port": 7433
+    },
+    "peers": [
+      {
+        "host": "127.0.0.1",
+        "port": 7443
+      }
+    ]
+  },
+  "miner": {
+    "reward_address": "BBC_4400000000000000000000000000000000000000000000000000000000000000"
+  },
+  "rpc": {
+    "listen": {
+      "host": "127.0.0.1",
+      "port": 7434
+    },
+    "token_file": "../../node-a.token"
+  }
+}

@@ -102,6 +102,10 @@ The scenario runner continues to use the separate
 [application-config.md](docs/application-config.md) for the complete format and
 [`rpc.md`](docs/rpc.md) for local command details.
 
+A complete two-node exercise using persistent configuration, mining, payment,
+catch-up synchronization, and restart is available in
+[persistent-network-test.md](docs/persistent-network-test.md).
+
 ## Wallet workflow
 
 Create an encrypted wallet and make it the selected wallet:

@@ -95,7 +95,11 @@ public:
             sessions_.clear();
             for (auto& [endpoint, target] : targets_) {
                 static_cast<void>(endpoint);
+                target->enabled = false;
                 target->timer.cancel();
+                if (target->connecting_socket) {
+                    target->connecting_socket->close(ignored);
+                }
             }
             work_.reset();
         });
@@ -144,7 +148,12 @@ public:
                 return;
             }
             const std::shared_ptr<Target> target = found->second;
+            target->enabled = false;
             target->timer.cancel();
+            if (target->connecting_socket) {
+                asio::error_code ignored;
+                target->connecting_socket->close(ignored);
+            }
             if (target->session_id.has_value()) {
                 const auto session = sessions_.find(*target->session_id);
                 if (session != sessions_.end()) {
@@ -584,6 +593,8 @@ private:
         asio::steady_timer timer;
         std::chrono::milliseconds reconnect_delay{reconnect_initial_delay};
         std::optional<std::uint64_t> session_id;
+        std::shared_ptr<asio::ip::tcp::socket> connecting_socket;
+        bool enabled = true;
         bool connecting = false;
     };
 
@@ -663,24 +674,34 @@ private:
     }
 
     void begin_connect(const std::shared_ptr<Target>& target) {
-        if (stopping_ || target->connecting || target->session_id.has_value() ||
+        if (stopping_ || !target->enabled || target->connecting ||
+            target->session_id.has_value() ||
             sessions_.size() >= maximum_peer_count) {
             return;
         }
         target->connecting = true;
         auto socket = std::make_shared<asio::ip::tcp::socket>(context_);
+        target->connecting_socket = socket;
         socket->async_connect(target->endpoint, [this, target, socket](
             const asio::error_code& error
         ) {
             target->connecting = false;
+            target->connecting_socket.reset();
             if (error) {
-                emit(PeerEvent{
-                    "peer_connect_failed",
-                    0,
-                    endpoint_text(target->endpoint),
-                    error.message(),
-                });
-                schedule_reconnect(target);
+                if (!stopping_ && target->enabled) {
+                    emit(PeerEvent{
+                        "peer_connect_failed",
+                        0,
+                        endpoint_text(target->endpoint),
+                        error.message(),
+                    });
+                    schedule_reconnect(target);
+                }
+                return;
+            }
+            if (stopping_ || !target->enabled) {
+                asio::error_code ignored;
+                socket->close(ignored);
                 return;
             }
             const std::uint64_t id = create_session(
@@ -693,7 +714,8 @@ private:
     }
 
     void schedule_reconnect(const std::shared_ptr<Target>& target) {
-        if (stopping_ || target->connecting || target->session_id.has_value()) {
+        if (stopping_ || !target->enabled || target->connecting ||
+            target->session_id.has_value()) {
             return;
         }
         target->timer.expires_after(target->reconnect_delay);

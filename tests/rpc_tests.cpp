@@ -1,4 +1,5 @@
 #include "bbc/app/application.hpp"
+#include "bbc/chain/state.hpp"
 #include "bbc/core/network.hpp"
 #include "bbc/rpc/token.hpp"
 #include "bbc/transaction/transaction.hpp"
@@ -13,10 +14,13 @@
 #include <chrono>
 #include <filesystem>
 #include <fstream>
+#include <memory>
+#include <optional>
 #include <sstream>
 #include <string>
 #include <string_view>
 #include <thread>
+#include <vector>
 
 namespace {
 
@@ -54,6 +58,23 @@ std::uint16_t available_loopback_port() {
         {asio::ip::make_address_v4("127.0.0.1"), 0},
     };
     return acceptor.local_endpoint().port();
+}
+
+std::vector<std::uint16_t> available_loopback_ports(const std::size_t count) {
+    asio::io_context context;
+    std::vector<std::unique_ptr<asio::ip::tcp::acceptor>> acceptors;
+    std::vector<std::uint16_t> ports;
+    acceptors.reserve(count);
+    ports.reserve(count);
+    for (std::size_t index = 0; index < count; ++index) {
+        auto acceptor = std::make_unique<asio::ip::tcp::acceptor>(
+            context,
+            asio::ip::tcp::endpoint{asio::ip::make_address_v4("127.0.0.1"), 0}
+        );
+        ports.push_back(acceptor->local_endpoint().port());
+        acceptors.push_back(std::move(acceptor));
+    }
+    return ports;
 }
 
 int run_cli(
@@ -121,7 +142,7 @@ bool wait_for_rpc(const std::filesystem::path& config_path) {
     const std::array<std::string_view, 4> arguments{
         "rpc", "health", "--config", config
     };
-    for (int attempt = 0; attempt < 500; ++attempt) {
+    for (int attempt = 0; attempt < 1'000; ++attempt) {
         std::ostringstream output;
         std::ostringstream error_output;
         if (bbc::app::run(arguments, output, error_output) == 0) {
@@ -162,7 +183,7 @@ bool wait_for_height(
     const std::array<std::string_view, 4> arguments{
         "rpc", "status", "--config", config
     };
-    for (int attempt = 0; attempt < 500; ++attempt) {
+    for (int attempt = 0; attempt < 1'000; ++attempt) {
         std::ostringstream output;
         std::ostringstream error_output;
         if (bbc::app::run(arguments, output, error_output) == 0) {
@@ -174,6 +195,75 @@ bool wait_for_height(
         std::this_thread::sleep_for(std::chrono::milliseconds{10});
     }
     return false;
+}
+
+std::optional<nlohmann::json> rpc_json(
+    const std::filesystem::path& config_path,
+    const std::string_view command
+) {
+    const std::string config = config_path.string();
+    const std::array<std::string_view, 4> arguments{
+        "rpc", command, "--config", config
+    };
+    std::ostringstream output;
+    std::ostringstream error_output;
+    if (bbc::app::run(arguments, output, error_output) != 0) {
+        return std::nullopt;
+    }
+    return nlohmann::json::parse(output.str());
+}
+
+template <typename Predicate>
+bool wait_for_status(
+    const std::filesystem::path& config_path,
+    Predicate predicate
+) {
+    for (int attempt = 0; attempt < 1'000; ++attempt) {
+        const std::optional<nlohmann::json> status =
+            rpc_json(config_path, "status");
+        if (status.has_value() && predicate(*status)) {
+            return true;
+        }
+        std::this_thread::sleep_for(std::chrono::milliseconds{10});
+    }
+    return false;
+}
+
+bool request_stop(const std::filesystem::path& config_path) {
+    const std::string config = config_path.string();
+    std::ostringstream output;
+    std::ostringstream error_output;
+    return run_cli(
+        {"rpc", "stop", "--config", config},
+        output,
+        error_output
+    ) == 0;
+}
+
+bool wait_for_exit(const RunningApplicationNode& node) {
+    for (int attempt = 0; attempt < 500; ++attempt) {
+        if (node.result() != -1) {
+            return true;
+        }
+        std::this_thread::sleep_for(std::chrono::milliseconds{10});
+    }
+    return false;
+}
+
+std::optional<nlohmann::json> account_entry(
+    const nlohmann::json& dump,
+    const std::string_view address
+) {
+    if (!dump.contains("chain") || !dump["chain"].contains("accounts") ||
+        !dump["chain"]["accounts"].is_array()) {
+        return std::nullopt;
+    }
+    for (const nlohmann::json& account : dump["chain"]["accounts"]) {
+        if (account.value("address", std::string{}) == address) {
+            return std::optional<nlohmann::json>{account};
+        }
+    }
+    return std::nullopt;
 }
 
 }  // namespace
@@ -368,4 +458,235 @@ TEST_CASE("persistent node RPC mines and accepts a signed transaction", "[rpc][n
     CHECK(node.output().find("\"event\":\"ready\"") != std::string::npos);
     CHECK(node.output().find("\"event\":\"stopped\"") != std::string::npos);
     CHECK(node.output().find(token.value()) == std::string::npos);
+}
+
+TEST_CASE("two persistent nodes confirm payment and recover after restart", "[rpc][node][network]") {
+    TemporaryRpcDirectory directory;
+    const std::filesystem::path node_a_config = directory.path() / "node-a.json";
+    const std::filesystem::path node_b_config = directory.path() / "node-b.json";
+    const std::filesystem::path transaction_path = directory.path() / "payment.bbctx";
+    const std::vector<std::uint16_t> ports = available_loopback_ports(4);
+
+    bbc::wallet::Wallet miner_wallet = bbc::wallet::Wallet::create();
+    const bbc::wallet::Wallet recipient_wallet = bbc::wallet::Wallet::create();
+    const nlohmann::json node_a{
+        {"schema_version", 1},
+        {"name", "node-a"},
+        {"network", "regtest"},
+        {"roles", {"wallet", "full_node", "miner"}},
+        {"wallet", {{"file", "miner.wallet"}}},
+        {"data_directory", "node-a-data"},
+        {"full_node", {
+            {"listen", {{"host", "127.0.0.1"}, {"port", ports[0]}}},
+            {"peers", {
+                {{"host", "127.0.0.1"}, {"port", ports[2]}},
+            }},
+        }},
+        {"miner", {
+            {"reward_address", std::string{miner_wallet.address().value()}},
+        }},
+        {"rpc", {
+            {"listen", {{"host", "127.0.0.1"}, {"port", ports[1]}}},
+            {"token_file", "node-a.token"},
+        }},
+    };
+    const nlohmann::json node_b{
+        {"schema_version", 1},
+        {"name", "node-b"},
+        {"network", "regtest"},
+        {"roles", {"wallet", "full_node"}},
+        {"wallet", {{"file", "recipient.wallet"}}},
+        {"data_directory", "node-b-data"},
+        {"full_node", {
+            {"listen", {{"host", "127.0.0.1"}, {"port", ports[2]}}},
+            {"peers", nlohmann::json::array()},
+        }},
+        {"rpc", {
+            {"listen", {{"host", "127.0.0.1"}, {"port", ports[3]}}},
+            {"token_file", "node-b.token"},
+        }},
+    };
+    {
+        std::ofstream output(node_a_config, std::ios::binary | std::ios::trunc);
+        output << node_a.dump(2) << '\n';
+    }
+    {
+        std::ofstream output(node_b_config, std::ios::binary | std::ios::trunc);
+        output << node_b.dump(2) << '\n';
+    }
+
+    constexpr std::uint64_t amount = 1'000'000'000;
+    constexpr std::uint64_t fee = 1'000;
+    std::string node_a_token;
+    std::string node_b_token;
+    {
+        RunningApplicationNode running_a{node_a_config};
+        REQUIRE(wait_for_rpc(node_a_config));
+
+        {
+            RunningApplicationNode running_b{node_b_config};
+            REQUIRE(wait_for_rpc(node_b_config));
+            REQUIRE(wait_for_status(node_a_config, [](const nlohmann::json& status) {
+                return status["p2p"]["handshake_complete_count"] >= 1;
+            }));
+            REQUIRE(wait_for_status(node_b_config, [](const nlohmann::json& status) {
+                return status["p2p"]["handshake_complete_count"] >= 1;
+            }));
+
+            std::ostringstream mining_output;
+            std::ostringstream mining_error;
+            const std::string config = node_a_config.string();
+            REQUIRE(run_cli(
+                {"rpc", "start-mining", "--config", config},
+                mining_output,
+                mining_error
+            ) == 0);
+            REQUIRE(wait_for_height(node_a_config, 1));
+            REQUIRE(wait_for_height(node_b_config, 1));
+
+            bbc::transaction::TransactionResult payment =
+                bbc::transaction::sign_transaction(
+                    miner_wallet,
+                    {
+                        recipient_wallet.address(),
+                        amount,
+                        fee,
+                        0,
+                        bbc::core::network_parameters(
+                            bbc::core::NetworkProfile::regtest
+                        ).chain_id,
+                    }
+                );
+            REQUIRE(payment.has_value());
+            REQUIRE(
+                bbc::transaction::save_transaction(payment.value(), transaction_path) ==
+                bbc::transaction::TransactionError::none
+            );
+            const std::string transaction = transaction_path.string();
+            std::ostringstream submit_output;
+            std::ostringstream submit_error;
+            REQUIRE(run_cli(
+                {"rpc", "submit", "--config", config, "--transaction", transaction},
+                submit_output,
+                submit_error
+            ) == 0);
+            REQUIRE(wait_for_status(node_a_config, [](const nlohmann::json& status) {
+                return status["chain"]["mempool_size"] == 1;
+            }));
+            REQUIRE(wait_for_status(node_b_config, [](const nlohmann::json& status) {
+                return status["chain"]["mempool_size"] == 1;
+            }));
+
+            const bbc::rpc::TokenResult token_a = bbc::rpc::load_token(
+                directory.path() / "node-a.token"
+            );
+            const bbc::rpc::TokenResult token_b = bbc::rpc::load_token(
+                directory.path() / "node-b.token"
+            );
+            REQUIRE(token_a.has_value());
+            REQUIRE(token_b.has_value());
+            node_a_token = token_a.value();
+            node_b_token = token_b.value();
+
+            REQUIRE(request_stop(node_b_config));
+            REQUIRE(wait_for_exit(running_b));
+            CHECK(running_b.result() == 0);
+        }
+
+        const std::string config = node_a_config.string();
+        std::ostringstream mining_output;
+        std::ostringstream mining_error;
+        REQUIRE(run_cli(
+            {"rpc", "start-mining", "--config", config},
+            mining_output,
+            mining_error
+        ) == 0);
+        REQUIRE(wait_for_height(node_a_config, 2));
+
+        {
+            RunningApplicationNode restarted_b{node_b_config};
+            REQUIRE(wait_for_rpc(node_b_config));
+            REQUIRE(wait_for_height(node_b_config, 2));
+            REQUIRE(wait_for_status(node_b_config, [](const nlohmann::json& status) {
+                return status["chain"]["mempool_size"] == 0 &&
+                    status["sync"]["state"] == "complete";
+            }));
+
+            const std::optional<nlohmann::json> dump_a =
+                rpc_json(node_a_config, "dump");
+            const std::optional<nlohmann::json> dump_b =
+                rpc_json(node_b_config, "dump");
+            REQUIRE(dump_a.has_value());
+            REQUIRE(dump_b.has_value());
+            CHECK((*dump_a)["chain"]["tip"] == (*dump_b)["chain"]["tip"]);
+            CHECK((*dump_a)["chain"]["height"] == 2);
+            CHECK((*dump_b)["chain"]["height"] == 2);
+
+            const std::optional<nlohmann::json> miner_a = account_entry(
+                *dump_a,
+                miner_wallet.address().value()
+            );
+            const std::optional<nlohmann::json> miner_b = account_entry(
+                *dump_b,
+                miner_wallet.address().value()
+            );
+            const std::optional<nlohmann::json> recipient_a = account_entry(
+                *dump_a,
+                recipient_wallet.address().value()
+            );
+            const std::optional<nlohmann::json> recipient_b = account_entry(
+                *dump_b,
+                recipient_wallet.address().value()
+            );
+            REQUIRE(miner_a.has_value());
+            REQUIRE(miner_b.has_value());
+            REQUIRE(recipient_a.has_value());
+            REQUIRE(recipient_b.has_value());
+            const std::uint64_t miner_balance =
+                bbc::chain::block_subsidy * 2 - amount;
+            CHECK((*miner_a)["balance"] == miner_balance);
+            CHECK((*miner_b)["balance"] == miner_balance);
+            CHECK((*miner_a)["next_nonce"] == 1);
+            CHECK((*miner_b)["next_nonce"] == 1);
+            CHECK((*recipient_a)["balance"] == amount);
+            CHECK((*recipient_b)["balance"] == amount);
+            CHECK((*recipient_a)["next_nonce"] == 0);
+            CHECK((*recipient_b)["next_nonce"] == 0);
+
+            REQUIRE(request_stop(node_b_config));
+            REQUIRE(wait_for_exit(restarted_b));
+            CHECK(restarted_b.result() == 0);
+        }
+
+        REQUIRE(request_stop(node_a_config));
+        REQUIRE(wait_for_exit(running_a));
+        CHECK(running_a.result() == 0);
+    }
+
+    {
+        RunningApplicationNode restarted_a{node_a_config};
+        RunningApplicationNode restarted_b{node_b_config};
+        REQUIRE(wait_for_rpc(node_a_config));
+        REQUIRE(wait_for_rpc(node_b_config));
+        REQUIRE(wait_for_height(node_a_config, 2));
+        REQUIRE(wait_for_height(node_b_config, 2));
+
+        const bbc::rpc::TokenResult token_a = bbc::rpc::load_token(
+            directory.path() / "node-a.token"
+        );
+        const bbc::rpc::TokenResult token_b = bbc::rpc::load_token(
+            directory.path() / "node-b.token"
+        );
+        REQUIRE(token_a.has_value());
+        REQUIRE(token_b.has_value());
+        CHECK(token_a.value() == node_a_token);
+        CHECK(token_b.value() == node_b_token);
+
+        REQUIRE(request_stop(node_b_config));
+        REQUIRE(request_stop(node_a_config));
+        REQUIRE(wait_for_exit(restarted_b));
+        REQUIRE(wait_for_exit(restarted_a));
+        CHECK(restarted_a.result() == 0);
+        CHECK(restarted_b.result() == 0);
+    }
 }

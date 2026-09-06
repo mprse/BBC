@@ -66,6 +66,7 @@ wallet.dat
 *.wallet
 /*.db
 rpc.token
+*.token
 
 # Locally created transaction files
 /*.bbctx
