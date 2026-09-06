@@ -10,6 +10,7 @@
 #include "app/config_commands.hpp"
 #include "app/mempool_commands.hpp"
 #include "app/node_commands.hpp"
+#include "app/rpc_commands.hpp"
 #include "app/transaction_commands.hpp"
 #include "app/wallet_access.hpp"
 #include "app/wallet_selection.hpp"
@@ -93,7 +94,8 @@ void print_help(std::ostream& output) {
            << "  chain        Verify blocks and inspect chain state\n"
            << "  mempool      Store and inspect pending transactions\n"
            << "  config       Validate or inspect application configuration\n"
-           << "  node         Run a long-lived scenario actor\n"
+           << "  node         Run a long-lived BBC node\n"
+           << "  rpc          Inspect or control a running local node\n"
            << "  wallet-demo  Generate a temporary wallet and verify a signature\n\n";
     print_wallet_help(output);
     output << '\n';
@@ -108,6 +110,8 @@ void print_help(std::ostream& output) {
     detail::print_config_help(output);
     output << '\n';
     detail::print_node_help(output);
+    output << '\n';
+    detail::print_rpc_help(output);
 }
 
 bool read_password(
@@ -585,6 +589,14 @@ int run(
 
     if (arguments.front() == "node") {
         return detail::run_node_command(
+            arguments.subspan(1),
+            output,
+            error_output
+        );
+    }
+
+    if (arguments.front() == "rpc") {
+        return detail::run_rpc_command(
             arguments.subspan(1),
             output,
             error_output

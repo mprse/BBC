@@ -348,15 +348,22 @@ TEST_CASE("configuration CLI treats a missing file option as usage error", "[con
           std::string::npos);
 }
 
-TEST_CASE("normal config cannot enter the scenario actor command", "[config][application]") {
-    constexpr std::array<std::string_view, 4> arguments{
-        "node", "run", "--config", "bbc.json"
+TEST_CASE("node run requires exactly one configuration kind", "[config][application]") {
+    constexpr std::array<std::string_view, 2> missing_arguments{
+        "node", "run"
+    };
+    constexpr std::array<std::string_view, 6> duplicate_arguments{
+        "node", "run", "--config", "bbc.json",
+        "--scenario-config", "actor.json"
     };
     std::ostringstream output;
-    std::ostringstream error_output;
+    std::ostringstream missing_error;
+    std::ostringstream duplicate_error;
 
-    CHECK(bbc::app::run(arguments, output, error_output) == 2);
+    CHECK(bbc::app::run(missing_arguments, output, missing_error) == 2);
+    CHECK(bbc::app::run(duplicate_arguments, output, duplicate_error) == 2);
     CHECK(output.str().empty());
-    CHECK(error_output.str().find("Unknown option: --config") !=
+    CHECK(missing_error.str().find("exactly one") != std::string::npos);
+    CHECK(duplicate_error.str().find("exactly one") !=
           std::string::npos);
 }

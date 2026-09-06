@@ -1,6 +1,7 @@
 #include "app/node_commands.hpp"
 
 #include "app/command_options.hpp"
+#include "bbc/config/application_config.hpp"
 #include "bbc/node/control_server.hpp"
 #include "bbc/node/scenario_actor_config.hpp"
 
@@ -23,13 +24,37 @@ int run_node(
     std::ostream& output,
     std::ostream& error_output
 ) {
-    if (!validate_options(options, {"--scenario-config"}, error_output)) {
+    if (!validate_options(options, {"--config", "--scenario-config"}, error_output)) {
         return usage_error;
     }
+    const bool application_config = has_option(options, "--config");
+    const bool scenario_config = has_option(options, "--scenario-config");
+    if (application_config == scenario_config) {
+        error_output << "Use exactly one of --config or --scenario-config.\n";
+        return usage_error;
+    }
+    const std::string_view option = application_config
+        ? "--config" : "--scenario-config";
     const std::optional<std::string_view> config_path =
-        required_option(options, "--scenario-config", error_output);
+        required_option(options, option, error_output);
     if (!config_path.has_value()) {
         return usage_error;
+    }
+    if (application_config) {
+        config::ApplicationConfigResult loaded = config::load_application_config(
+            std::filesystem::path{std::string{*config_path}}
+        );
+        if (!loaded.has_value()) {
+            error_output << "Could not load application configuration: "
+                         << config::application_config_error_message(loaded.error())
+                         << '\n';
+            return runtime_error;
+        }
+        return node::run_application_node(
+            std::move(loaded).value(),
+            output,
+            error_output
+        );
     }
     node::ScenarioActorConfigResult loaded = node::load_scenario_actor_config(
         std::filesystem::path{std::string{*config_path}}
@@ -50,6 +75,7 @@ int run_node(
 
 void print_node_help(std::ostream& output) {
     output << "Node commands:\n"
+           << "  bbc node run --config <path>\n"
            << "  bbc node run --scenario-config <path>\n";
 }
 

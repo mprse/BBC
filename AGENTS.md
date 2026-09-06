@@ -129,6 +129,7 @@ The repository is organized by responsibility:
 |   |-- mempool/
 |   |-- network/
 |   |-- node/
+|   |-- rpc/
 |   |-- storage/
 |   |-- transaction/
 |   |-- wallet/

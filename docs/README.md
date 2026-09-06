@@ -11,6 +11,8 @@ when a topic crosses subsystem boundaries.
   process roles, APIs, persistence, and validation boundaries.
 - [`application-config.md`](application-config.md) defines persistent wallet,
   node, miner, peer, and local-command settings.
+- [`rpc.md`](rpc.md) explains how another terminal inspects and controls a
+  running local node without exposing wallet secrets.
 - [`toolchain.md`](toolchain.md) explains supported development tools and build
   procedures for Windows, Linux, and an eventual EC2 host.
 - [`local-network-test-plan.md`](local-network-test-plan.md) explains actor roles,
@@ -45,6 +47,7 @@ when a topic crosses subsystem boundaries.
   transfer, and fork-aware synchronization;
 - [`node-control.md`](node-control.md) — loopback-only test control and the
   scenario runner.
+- [`rpc.md`](rpc.md) — authenticated local commands for a persistent node.
 
 ## Architecture decisions
 

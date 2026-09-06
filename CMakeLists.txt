@@ -30,6 +30,7 @@ add_library(
     src/app/config_commands.cpp
     src/app/mempool_commands.cpp
     src/app/node_commands.cpp
+    src/app/rpc_commands.cpp
     src/app/password_reader.cpp
     src/app/transaction_commands.cpp
     src/app/wallet_access.cpp
@@ -51,6 +52,7 @@ add_library(
     src/network/peer_network.cpp
     src/node/control_server.cpp
     src/node/scenario_actor_config.cpp
+    src/rpc/token.cpp
     src/storage/chain_store.cpp
     src/storage/mempool_store.cpp
     src/transaction/transaction.cpp
@@ -88,7 +90,8 @@ if(BUILD_TESTING)
         tests/application_config_tests.cpp
         tests/block_tests.cpp
         tests/blockchain_tests.cpp
-        tests/proof_of_work_tests.cpp
+    tests/proof_of_work_tests.cpp
+    tests/rpc_tests.cpp
         tests/storage_tests.cpp
         tests/crypto_tests.cpp
         tests/mempool_tests.cpp

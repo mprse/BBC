@@ -7,6 +7,7 @@
 #include "bbc/crypto/hash.hpp"
 #include "bbc/network/peer_network.hpp"
 #include "bbc/network/protocol.hpp"
+#include "bbc/rpc/token.hpp"
 #include "bbc/storage/chain_store.hpp"
 #include "bbc/storage/mempool_store.hpp"
 #include "bbc/transaction/transaction.hpp"
@@ -15,6 +16,7 @@
 
 #include <asio.hpp>
 #include <nlohmann/json.hpp>
+#include <sodium.h>
 
 #include <algorithm>
 #include <cstddef>
@@ -40,6 +42,104 @@ constexpr auto mining_progress_interval = std::chrono::seconds{5};
 constexpr crypto::Byte sync_status_ok = 0;
 constexpr crypto::Byte sync_status_locator_not_found = 1;
 constexpr crypto::Byte sync_status_invalid_request = 2;
+
+struct RuntimeConfig {
+    std::string name;
+    std::vector<ActorRole> roles;
+    std::filesystem::path data_directory;
+    core::NetworkProfile network_profile = core::NetworkProfile::development;
+    std::string p2p_host = "127.0.0.1";
+    std::uint16_t p2p_port = 0;
+    std::string control_host = "127.0.0.1";
+    std::uint16_t control_port = 0;
+    std::string control_token;
+    std::vector<config::NetworkEndpoint> initial_peers;
+    std::optional<wallet::Address> reward_address;
+    bool ephemeral_wallet = false;
+    bool scenario = false;
+
+    [[nodiscard]] bool has_role(const ActorRole role) const noexcept {
+        return std::ranges::find(roles, role) != roles.end();
+    }
+};
+
+std::vector<ActorRole> runtime_roles(
+    const std::vector<config::ApplicationRole>& roles
+) {
+    std::vector<ActorRole> result;
+    result.reserve(roles.size());
+    for (const config::ApplicationRole role : roles) {
+        switch (role) {
+            case config::ApplicationRole::wallet:
+                result.push_back(ActorRole::wallet);
+                break;
+            case config::ApplicationRole::full_node:
+                result.push_back(ActorRole::full_node);
+                break;
+            case config::ApplicationRole::miner:
+                result.push_back(ActorRole::miner);
+                break;
+        }
+    }
+    return result;
+}
+
+RuntimeConfig runtime_config(ScenarioActorConfig config) {
+    return RuntimeConfig{
+        std::move(config.name),
+        std::move(config.roles),
+        std::move(config.data_directory),
+        config.network_profile,
+        "127.0.0.1",
+        config.p2p_port,
+        "127.0.0.1",
+        config.control_port,
+        std::move(config.control_token),
+        {},
+        std::nullopt,
+        true,
+        true,
+    };
+}
+
+RuntimeConfig runtime_config(
+    config::ApplicationConfig application,
+    std::string token
+) {
+    const bool full_node = application.has_role(config::ApplicationRole::full_node);
+    std::string p2p_host = "127.0.0.1";
+    std::uint16_t p2p_port = 0;
+    std::vector<config::NetworkEndpoint> peers;
+    if (application.full_node.has_value()) {
+        p2p_host = application.full_node->listen.host;
+        p2p_port = application.full_node->listen.port;
+        peers = std::move(application.full_node->peers);
+    } else if (application.miner.has_value() && application.miner->source.has_value()) {
+        peers.push_back(*application.miner->source);
+    }
+
+    RuntimeConfig result{
+        std::move(application.name),
+        runtime_roles(application.roles),
+        std::move(application.data_directory),
+        application.network_profile,
+        std::move(p2p_host),
+        p2p_port,
+        application.rpc->listen.host,
+        application.rpc->listen.port,
+        std::move(token),
+        std::move(peers),
+        application.miner.has_value()
+            ? std::optional<wallet::Address>{application.miner->reward_address}
+            : std::nullopt,
+        false,
+        false,
+    };
+    if (!full_node) {
+        result.p2p_port = 0;
+    }
+    return result;
+}
 
 class EventEmitter final {
 public:
@@ -67,15 +167,23 @@ private:
 
 class NodeRuntime final {
 public:
-    explicit NodeRuntime(ScenarioActorConfig config) : config_(std::move(config)) {}
+    explicit NodeRuntime(RuntimeConfig config) : config_(std::move(config)) {}
 
     ~NodeRuntime() {
         stop_network();
     }
 
     [[nodiscard]] bool initialize(std::ostream& error_output) {
-        if (config_.has_role(ActorRole::wallet)) {
+        if (config_.ephemeral_wallet && config_.has_role(ActorRole::wallet)) {
             wallet_.emplace(wallet::Wallet::create());
+            if (config_.has_role(ActorRole::miner)) {
+                config_.reward_address = wallet_->address();
+            }
+        }
+        if (config_.has_role(ActorRole::miner) &&
+            !config_.reward_address.has_value()) {
+            error_output << "Miner has no reward address.\n";
+            return false;
         }
         if (!config_.has_role(ActorRole::full_node)) {
             return true;
@@ -114,7 +222,7 @@ public:
         return true;
     }
 
-    [[nodiscard]] const ScenarioActorConfig& config() const noexcept {
+    [[nodiscard]] const RuntimeConfig& config() const noexcept {
         return config_;
     }
 
@@ -182,6 +290,14 @@ public:
             network_.reset();
             return false;
         }
+        for (const config::NetworkEndpoint& peer : config_.initial_peers) {
+            if (!network_->connect(peer.host, peer.port, error)) {
+                error_output << "Could not add initial peer " << peer.host << ':'
+                             << peer.port << ": " << error << '\n';
+                stop_network();
+                return false;
+            }
+        }
         return true;
     }
 
@@ -233,9 +349,9 @@ public:
         const bool defer_work,
         std::string& error
     ) {
-        if (!config_.has_role(ActorRole::miner) || !wallet_.has_value() ||
-            !network_.has_value()) {
-            error = "Actor is not a networked wallet miner.";
+        if (!config_.has_role(ActorRole::miner) ||
+            !config_.reward_address.has_value() || !network_.has_value()) {
+            error = "Node is not configured as a miner.";
             return false;
         }
         if (mining_active_.load()) {
@@ -251,6 +367,48 @@ public:
                 return false;
             }
         }
+        if (chain_store_.has_value()) {
+            chain::BlockResult candidate{chain::BlockError::invalid_genesis};
+            {
+                std::lock_guard lock{state_mutex_};
+                const chain::Block& tip = chain_store_->blockchain().tip();
+                candidate = chain::create_block({
+                    tip.height() + 1,
+                    tip.id(),
+                    *config_.reward_address,
+                    tip.timestamp() + 1,
+                    consensus::fixed_difficulty_target(tip.chain_id()),
+                    0,
+                    mempool_store_.has_value()
+                        ? mempool_store_->mempool().select(
+                            chain::maximum_transactions_per_block
+                        )
+                        : std::vector<transaction::SignedTransaction>{},
+                    tip.chain_id(),
+                });
+            }
+            if (!candidate.has_value()) {
+                error = "Could not create a local block template.";
+                return false;
+            }
+            chain::Block block = std::move(candidate).value();
+            {
+                std::lock_guard lock{mining_mutex_};
+                mining_parent_ = block.previous_block_hash();
+                mining_height_ = block.height();
+                if (defer_work) {
+                    prepared_mining_candidate_.emplace(block);
+                    prepared_mining_peer_ = 0;
+                    mining_state_ = "ready";
+                }
+            }
+            if (defer_work) {
+                emit("mining_ready", {{"height", block.height()}});
+            } else {
+                launch_mining(0, std::move(block), std::nullopt);
+            }
+            return true;
+        }
         const auto peers = network_->peers();
         const auto source = std::ranges::find_if(peers, [](const auto& peer) {
             return peer.handshake_complete &&
@@ -263,7 +421,7 @@ public:
         const std::uint64_t request_id = next_template_request_++;
         crypto::Bytes payload;
         append_u64(payload, request_id);
-        const wallet::Address reward_address = wallet_->address();
+        const wallet::Address reward_address = *config_.reward_address;
         payload.insert(
             payload.end(),
             reward_address.hash().begin(),
@@ -364,9 +522,74 @@ public:
             )};
             return false;
         }
-        transaction_id = signed_transaction.value().id();
+        return submit_signed_transaction(
+            std::move(signed_transaction).value(),
+            error,
+            transaction_id
+        );
+    }
+
+    [[nodiscard]] bool submit_signed_transaction(
+        transaction::SignedTransaction signed_transaction,
+        std::string& error,
+        crypto::Hash256& transaction_id
+    ) {
+        if (!network_.has_value()) {
+            error = "Node has no P2P service.";
+            return false;
+        }
+        if (signed_transaction.chain_id() !=
+            core::network_parameters(config_.network_profile).chain_id) {
+            error = "Transaction belongs to a different network.";
+            return false;
+        }
+        transaction_id = signed_transaction.id();
+        if (chain_store_.has_value() && mempool_store_.has_value()) {
+            const crypto::Bytes encoded = signed_transaction.serialize();
+            storage::MempoolStoreAddResult added;
+            {
+                std::lock_guard lock{state_mutex_};
+                added = mempool_store_->add(std::move(signed_transaction));
+            }
+            if (!added.has_value()) {
+                error = added.storage_error == storage::MempoolStoreError::none
+                    ? std::string{mempool::mempool_error_message(added.mempool_error)}
+                    : std::string{storage::mempool_store_error_message(
+                        added.storage_error
+                    )};
+                return false;
+            }
+            {
+                std::lock_guard lock{transaction_mutex_};
+                pending_transaction_id_ = transaction_id;
+                transaction_state_ = "accepted";
+            }
+            network_->broadcast(network::MessageType::transaction, encoded);
+            emit("transaction_accepted", {
+                {"transaction_id", crypto::to_upper_hex(transaction_id)},
+                {"source", "local_rpc"},
+            });
+            emit("transaction_relayed", {
+                {"transaction_id", crypto::to_upper_hex(transaction_id)},
+            });
+            return true;
+        }
+
+        const auto peers = network_->peers();
+        const auto full_node = std::ranges::find_if(peers, [](const auto& peer) {
+            return peer.handshake_complete &&
+                (peer.services & network::full_node_service) != 0;
+        });
+        if (full_node == peers.end()) {
+            error = "Wallet has no connected full node.";
+            return false;
+        }
         {
             std::lock_guard lock{transaction_mutex_};
+            if (transaction_state_ == "submitted") {
+                error = "Wallet already has a pending transaction submission.";
+                return false;
+            }
             pending_transaction_id_ = transaction_id;
             pending_transaction_peer_ = full_node->id;
             transaction_state_ = "submitted";
@@ -374,7 +597,7 @@ public:
         if (!network_->send(
                 full_node->id,
                 network::MessageType::transaction_submit,
-                signed_transaction.value().serialize()
+                signed_transaction.serialize()
             )) {
             std::lock_guard lock{transaction_mutex_};
             pending_transaction_id_.reset();
@@ -400,6 +623,10 @@ public:
         };
         if (wallet_.has_value()) {
             result["wallet_address"] = std::string{wallet_->address().value()};
+        }
+        if (config_.reward_address.has_value()) {
+            result["mining_reward_address"] =
+                std::string{config_.reward_address->value()};
         }
         if (chain_store_.has_value()) {
             std::lock_guard lock{state_mutex_};
@@ -494,7 +721,7 @@ public:
                 peers.push_back(std::move(encoded));
             }
             result["p2p"] = {
-                {"host", "127.0.0.1"},
+                {"host", config_.p2p_host},
                 {"port", network_->listen_port()},
                 {"peer_count", peers.size()},
                 {"handshake_complete_count", completed},
@@ -633,6 +860,23 @@ private:
                             {"attempts", mining_attempts_.load()},
                             {"height", mined.height()},
                         });
+                        if (peer_id == 0) {
+                            const crypto::Bytes encoded = mined.serialize();
+                            handle_block(0, encoded, false);
+                            bool accepted = false;
+                            {
+                                std::lock_guard lock{state_mutex_};
+                                accepted = chain_store_.has_value() &&
+                                    chain_store_->blockchain().tip().id() == mined.id();
+                            }
+                            set_mining_state(accepted ? "accepted" : "rejected");
+                            emit(accepted ? "mining_accepted" : "mining_rejected", {
+                                {"block_id", crypto::to_upper_hex(mined.id())},
+                                {"height", mined.height()},
+                                {"source", "local_full_node"},
+                            });
+                            return;
+                        }
                         static_cast<void>(network_->send(
                             peer_id,
                             network::MessageType::block_submit,
@@ -778,7 +1022,7 @@ private:
         });
         const core::NetworkParameters& parameters =
             core::network_parameters(config_.network_profile);
-        const wallet::Address own_address = wallet_->address();
+        const wallet::Address own_address = *config_.reward_address;
         std::uint64_t expected_height = 0;
         crypto::Hash256 expected_tip{};
         if (chain_store_.has_value()) {
@@ -920,6 +1164,9 @@ private:
             return;
         }
         if (config_.has_role(ActorRole::miner)) {
+            if (mining_active_.load()) {
+                mining_cancelled_.store(true);
+            }
             std::lock_guard lock{mining_mutex_};
             mining_known_height_ = active_tip_height;
             mining_known_tip_ = active_tip_id;
@@ -1518,7 +1765,7 @@ private:
         return names;
     }
 
-    ScenarioActorConfig config_;
+    RuntimeConfig config_;
     std::optional<wallet::Wallet> wallet_;
     std::optional<storage::ChainStore> chain_store_;
     std::optional<storage::MempoolStore> mempool_store_;
@@ -1582,8 +1829,15 @@ nlohmann::json handle_request(
         !request.contains("token") || !request["token"].is_string()) {
         return error_response(id, "invalid_request", "Invalid control request.");
     }
-    if (request["token"].get_ref<const std::string&>() !=
-        runtime.config().control_token) {
+    const std::string& supplied_token =
+        request["token"].get_ref<const std::string&>();
+    const std::string& expected_token = runtime.config().control_token;
+    if (supplied_token.size() != expected_token.size() ||
+        sodium_memcmp(
+            supplied_token.data(),
+            expected_token.data(),
+            expected_token.size()
+        ) != 0) {
         return error_response(id, "unauthorized", "Invalid control token.");
     }
 
@@ -1596,6 +1850,11 @@ nlohmann::json handle_request(
     }
     if (method == "dump") {
         return {{"id", id}, {"ok", true}, {"result", runtime.status(true)}};
+    }
+    if (!runtime.config().scenario && method != "ping" &&
+        method != "start_mining" && method != "submit_signed_transaction" &&
+        method != "shutdown") {
+        return error_response(id, "unknown_method", "Unknown RPC method.");
     }
     if (method == "connect_peer") {
         if (!request.contains("params") || !request["params"].is_object()) {
@@ -1736,6 +1995,46 @@ nlohmann::json handle_request(
             {"result", {{"transaction_id", crypto::to_upper_hex(transaction_id)}}},
         };
     }
+    if (method == "submit_signed_transaction") {
+        if (!request.contains("params") || !request["params"].is_object() ||
+            !request["params"].contains("transaction_hex") ||
+            !request["params"]["transaction_hex"].is_string()) {
+            return error_response(id, "invalid_params", "Missing signed transaction.");
+        }
+        const std::string& encoded_hex =
+            request["params"]["transaction_hex"].get_ref<const std::string&>();
+        crypto::Bytes encoded(transaction::signed_transaction_size);
+        if (!crypto::decode_hex(encoded_hex, encoded)) {
+            return error_response(
+                id,
+                "invalid_params",
+                "Signed transaction has invalid hexadecimal encoding."
+            );
+        }
+        transaction::TransactionResult decoded =
+            transaction::deserialize_transaction(encoded);
+        if (!decoded.has_value()) {
+            return error_response(
+                id,
+                "invalid_params",
+                transaction::transaction_error_message(decoded.error())
+            );
+        }
+        std::string error;
+        crypto::Hash256 transaction_id{};
+        if (!runtime.submit_signed_transaction(
+                std::move(decoded).value(),
+                error,
+                transaction_id
+            )) {
+            return error_response(id, "transaction_rejected", error);
+        }
+        return {
+            {"id", id},
+            {"ok", true},
+            {"result", {{"transaction_id", crypto::to_upper_hex(transaction_id)}}},
+        };
+    }
     if (method == "shutdown") {
         stopping = true;
         return {{"id", id}, {"ok", true}, {"result", {{"stopping", true}}}};
@@ -1765,15 +2064,22 @@ void serve_connection(
     } catch (const nlohmann::json::exception&) {
         response = error_response(nullptr, "invalid_json", "Invalid control JSON.");
     }
-    const std::string encoded = response.dump() + '\n';
+    std::string encoded = response.dump() + '\n';
+    if (encoded.size() > maximum_control_request_size) {
+        const nlohmann::json id = response.contains("id")
+            ? response["id"] : nlohmann::json{nullptr};
+        encoded = error_response(
+            id,
+            "response_too_large",
+            "RPC response exceeds 64 KiB."
+        ).dump() + '\n';
+    }
     asio::error_code write_error;
     asio::write(socket, asio::buffer(encoded), write_error);
 }
 
-}  // namespace
-
-int run_controlled_node(
-    ScenarioActorConfig config,
+int run_runtime_node(
+    RuntimeConfig config,
     std::ostream& output,
     std::ostream& error_output
 ) {
@@ -1792,22 +2098,27 @@ int run_controlled_node(
         asio::ip::tcp::acceptor acceptor{
             context,
             asio::ip::tcp::endpoint{
-                asio::ip::make_address_v4("127.0.0.1"),
+                asio::ip::make_address_v4(runtime.config().control_host),
                 runtime.config().control_port,
             },
         };
-        nlohmann::json ready_details{
-            {"control_host", "127.0.0.1"},
-            {"control_port", acceptor.local_endpoint().port()},
-        };
+        nlohmann::json ready_details;
+        if (runtime.config().scenario) {
+            ready_details = {
+                {"control_host", runtime.config().control_host},
+                {"control_port", acceptor.local_endpoint().port()},
+            };
+        } else {
+            ready_details = {
+                {"rpc_host", runtime.config().control_host},
+                {"rpc_port", acceptor.local_endpoint().port()},
+            };
+        }
         if (runtime.config().has_role(ActorRole::full_node)) {
-            ready_details["p2p_host"] = "127.0.0.1";
+            ready_details["p2p_host"] = runtime.config().p2p_host;
             ready_details["p2p_port"] = runtime.status(false)["p2p"]["port"];
         }
-        events.emit(
-            "ready",
-            std::move(ready_details)
-        );
+        events.emit("ready", std::move(ready_details));
 
         bool stopping = false;
         while (!stopping) {
@@ -1819,10 +2130,69 @@ int run_controlled_node(
         events.emit("stopped", {});
     } catch (const std::exception& error) {
         runtime.stop_network();
-        error_output << "Node control server failed: " << error.what() << '\n';
+        error_output << "Node RPC server failed: " << error.what() << '\n';
         return 1;
     }
     return 0;
+}
+
+}  // namespace
+
+int run_controlled_node(
+    ScenarioActorConfig config,
+    std::ostream& output,
+    std::ostream& error_output
+) {
+    return run_runtime_node(runtime_config(std::move(config)), output, error_output);
+}
+
+int run_application_node(
+    config::ApplicationConfig config,
+    std::ostream& output,
+    std::ostream& error_output
+) {
+    if (!config.full_node.has_value() && !config.miner.has_value()) {
+        error_output << "Configuration has no long-running full-node or miner role.\n";
+        return 1;
+    }
+    if (!config.rpc.has_value()) {
+        error_output << "Configuration has no local RPC settings.\n";
+        return 1;
+    }
+    if (config.full_node.has_value() &&
+        config.full_node->listen.host != "127.0.0.1") {
+        error_output << "This runtime currently supports only a 127.0.0.1 P2P listener.\n";
+        return 1;
+    }
+    const auto loopback_peer = [](const config::NetworkEndpoint& endpoint) {
+        asio::error_code address_error;
+        const asio::ip::address address =
+            asio::ip::make_address(endpoint.host, address_error);
+        return !address_error && address.is_v4() && address.to_v4().is_loopback();
+    };
+    if (config.full_node.has_value() &&
+        !std::ranges::all_of(config.full_node->peers, loopback_peer)) {
+        error_output << "This runtime currently supports only numeric IPv4 "
+                        "loopback peers.\n";
+        return 1;
+    }
+    if (config.miner.has_value() && config.miner->source.has_value() &&
+        !loopback_peer(*config.miner->source)) {
+        error_output << "This runtime currently supports only a numeric IPv4 "
+                        "loopback mining source.\n";
+        return 1;
+    }
+    rpc::TokenResult token = rpc::load_or_create_token(config.rpc->token_file);
+    if (!token.has_value()) {
+        error_output << "Could not prepare the RPC token: "
+                     << rpc::token_error_message(token.error()) << '\n';
+        return 1;
+    }
+    return run_runtime_node(
+        runtime_config(std::move(config), std::move(token).value()),
+        output,
+        error_output
+    );
 }
 
 }  // namespace bbc::node

@@ -65,13 +65,12 @@ BBC currently provides:
 - persistent side branches, cumulative-work fork choice, reorganizations, and
   detached-transaction restoration;
 - a Python scenario runner for observable multi-process tests on one computer;
-- strict persistent application configuration parsing with normalized paths and
-  role-specific validation.
+- strict persistent application configuration with a long-running node runtime
+  and an authenticated loopback RPC client.
 
-The P2P and test-control endpoints are currently restricted to IPv4 loopback.
-LAN and public-Internet listening, static seed discovery, normal node startup
-from persistent configuration, and a user-facing command client are not
-implemented yet.
+The P2P, application RPC, and test-control endpoints are currently restricted
+to IPv4 loopback at runtime. LAN and public-Internet listening and DNS peer
+resolution are not implemented yet.
 
 ## Application configuration
 
@@ -85,11 +84,23 @@ configuration. Validate or inspect the included example with:
 
 The parser validates the mandatory wallet role, optional full-node and miner
 roles, paths, endpoints, peers, mining reward address, and loopback RPC
-boundary. Normal `node run --config` and RPC commands are not connected yet;
-the currently working long-running command is reserved for the test runner as
-`node run --scenario-config`. See
+boundary. Start the configured services in one terminal:
+
+```console
+.\build\windows-msvc-debug\bbc.exe node run --config examples\application-config.json
+```
+
+Inspect and stop the process from another terminal:
+
+```console
+.\build\windows-msvc-debug\bbc.exe rpc status --config examples\application-config.json
+.\build\windows-msvc-debug\bbc.exe rpc stop --config examples\application-config.json
+```
+
+The scenario runner continues to use the separate
+`node run --scenario-config` interface. See
 [application-config.md](docs/application-config.md) for the complete format and
-integration status.
+[`rpc.md`](docs/rpc.md) for local command details.
 
 ## Wallet workflow
 

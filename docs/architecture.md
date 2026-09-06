@@ -6,9 +6,9 @@ BBC separates cryptographic data, consensus validation, local storage, peer
 communication, and test orchestration. This prevents a command, database, miner,
 or remote peer from bypassing the rules that every full node must enforce.
 
-The project currently supports observable local experiments. Its P2P protocol
-runs over real TCP, but application configuration and test control remain
-restricted to one computer.
+The project currently supports observable local experiments and persistent
+single-computer nodes. P2P, application RPC, and test control use real TCP but
+remain restricted to IPv4 loopback at runtime.
 
 ## Main data flow
 
@@ -40,15 +40,17 @@ restricted to one computer.
 | `mempool` | Pending transaction policy and selection | `Mempool` |
 | `storage` | Authoritative blocks and rebuildable SQLite caches | `ChainStore`, `MempoolStore` |
 | `network` | Framing, handshakes, relay, synchronization | P2P protocol version 1 |
-| `node` | Long-running scenario actor and local test control | `bbc node run --scenario-config` |
+| `node` | Shared long-running runtime for configured nodes and scenarios | `bbc node run ...` |
 | `config` | Strict persistent application settings | `ApplicationConfig`, `bbc config ...` |
+| `rpc` | Local authentication token and command client | `bbc rpc ...` |
 | `app` | Human-facing command dispatch | `bbc <command>` |
 | `tools/scenario.py` | Multi-process orchestration and assertions | Scenario JSON |
 
 The public headers under `include/bbc/` define reusable C++ interfaces. Code
 under `src/app/` translates CLI input into those interfaces; it must not contain
 alternative consensus rules. The `node` layer composes the same chain, storage,
-mempool, wallet, and network components for long-running scenarios.
+mempool, wallet, and network components for persistent processes and
+long-running scenarios.
 
 ## Process roles
 
@@ -67,7 +69,10 @@ temporarily during propagation or a fork and converge after one valid branch
 accumulates strictly more work.
 
 One process may combine roles, but the responsibilities and validation
-boundaries remain the same.
+boundaries remain the same. A persistent node never decrypts the configured
+wallet: the short-lived CLI signs locally and RPC carries only the public signed
+transaction. A combined full node and miner creates templates from its own
+validated chain and mempool.
 
 ## Persistent data
 
@@ -99,6 +104,8 @@ validate the same canonical blocks and derive the same active state.
   same transaction, mempool, chain, and storage APIs.
 - The scenario control endpoint can request normal operations but cannot install
   accepted state directly.
+- The application RPC binds only to `127.0.0.1`, requires a separate random
+  token, and submits signed transactions through the normal mempool path.
 
 ## Where to read next
 

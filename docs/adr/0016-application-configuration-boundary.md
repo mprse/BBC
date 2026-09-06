@@ -28,9 +28,9 @@ network implementation.
   unsafe RPC binding, and malformed endpoints before starting a process.
 - Keep scenario actor configuration and test control separate. The scenario
   runner invokes `bbc node run --scenario-config`; normal runtime configuration
-  will use `--config` after the shared runtime boundary is extracted.
-- Provide `bbc config validate` and `bbc config show` before runtime integration
-  so configuration behavior has a tested public interface.
+  uses `bbc node run --config` through the shared runtime boundary.
+- Provide `bbc config validate` and `bbc config show` as non-mutating inspection
+  commands in addition to runtime integration.
 - Use a loopback-only authenticated local RPC for commands sent from another
   terminal. The transaction client will sign locally and submit only public
   transaction bytes.
@@ -42,7 +42,8 @@ network implementation.
   generated test artifacts.
 - The parser may accept a future LAN or public P2P listen address, but parsing
   alone does not expose a service.
-- Normal `node run --config`, RPC transport, token creation, configuration
-  creation, and local wallet signing remain explicit follow-up integrations.
+- Runtime token creation, authenticated RPC transport, local mining, and signed
+  transaction submission are implemented. An automatic configuration creation
+  command and direct create-sign-submit wallet workflow remain follow-up work.
 - Application and scenario schemas can evolve independently without making
   test-only authentication part of the product interface.

@@ -12,10 +12,9 @@ creates and keeps an application configuration. The scenario runner creates
 short-lived actor configurations inside `build/scenarios/` and controls them
 through test-only methods.
 
-The parser and inspection commands described here are implemented. Starting a
-normal node and issuing commands through its local RPC are the next integration
-steps. Until then, `bbc node run --scenario-config` remains the only long-running
-node command.
+The parser, long-running node command, and local RPC client described here are
+implemented. The scenario runner retains its independent
+`bbc node run --scenario-config` boundary.
 
 ## Complete example
 
@@ -80,7 +79,8 @@ identify distinct paths.
 
 `wallet` is mandatory. It means this installation has one encrypted wallet file
 used by local CLI commands. A wallet password and private key are never stored
-in this configuration.
+in this configuration. The long-running process does not open or decrypt the
+wallet.
 
 `full_node` enables persistent blockchain validation, a mempool, a P2P listener,
 block synchronization, and relay. It requires the `full_node` object.
@@ -106,15 +106,17 @@ the running process.
 }
 ```
 
-`listen` is required and identifies the future inbound P2P TCP endpoint.
+`listen` is required and identifies the inbound P2P TCP endpoint.
 `peers` is optional and contains at most 64 unique initial peer endpoints. Ports
 range from 1 through 65535. Version 1 host values support DNS names and IPv4
 literals; whitespace, control characters, URL schemes, paths, and embedded
 ports are rejected. The listener itself cannot also appear as an initial peer.
 
-Parsing `0.0.0.0` does not expose the current application. Public and LAN
-listening will be enabled only when the normal node runtime, firewall guidance,
-and security tests are integrated.
+Version 1 parsing accepts future LAN, public, and DNS endpoints, but the current
+runtime starts only when the P2P listener and every initial peer use numeric
+IPv4 loopback. Other values fail before exposure or connection. LAN and public
+listening require firewall guidance, peer hardening, and dedicated security
+tests.
 
 ## Miner settings
 
@@ -145,10 +147,16 @@ Version 1 RPC is always bound to IPv4 loopback. Its port ranges from 1 through
 The token itself must never appear in the JSON configuration, logs, command
 line, or Git.
 
-The future transaction client will open and decrypt the wallet in its own
-short-lived process, sign canonical bytes locally, and send only the public
-signed transaction to the running node. The node process and RPC therefore do
-not receive the wallet password or private key.
+`bbc node run --config` creates the token file on first start from 32 bytes of
+operating-system cryptographic randomness and stores it as 64 hexadecimal
+characters. Later starts require that exact format and reuse the same token.
+The node and CLI compare or read the secret internally; normal output reveals
+only public node state.
+
+The transaction client opens and decrypts the wallet in its own short-lived
+process when creating a `.bbctx` file. RPC sends only that public signed
+transaction to the running node. The node process and RPC therefore do not
+receive the wallet password or private key.
 
 ## CLI inspection
 
@@ -164,6 +172,28 @@ changes; do not place a real wallet, RPC token, or node database in Git.
 `validate` returns success only when every field and cross-field rule passes.
 `show` prints the normalized configuration, including resolved absolute paths,
 without opening the wallet or token file and without printing secret content.
+
+## Starting and controlling services
+
+Start a configured full node or miner in a dedicated terminal:
+
+```console
+bbc node run --config bbc.json
+```
+
+The process initializes or reopens full-node storage, starts P2P, adds initial
+peers, creates or validates the RPC token, writes structured lifecycle events to
+standard output, and waits for an authenticated RPC request to stop. A
+wallet-only configuration is intentionally rejected by `node run` because it
+has no background service.
+
+A combined `full_node` and `miner` uses its local validated chain and mempool to
+create a candidate. A mining-only process requests work from its configured
+`miner.source`. Mining starts only after `bbc rpc start-mining`; it is not
+silently enabled on process startup.
+
+Use another terminal for `bbc rpc ...` commands. See [`rpc.md`](rpc.md) for the
+complete command and wire interfaces.
 
 ## C++ API
 

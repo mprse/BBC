@@ -2,12 +2,16 @@
 
 ## Purpose and boundaries
 
-`bbc node run` is a long-running actor process used by the local integration
+`bbc node run --scenario-config` is a long-running actor process used by the local integration
 test system. `tools/scenario.py` starts and supervises several such processes,
 connects their real P2P endpoints, drives wallets and miners through a separate
 loopback-only control endpoint, and verifies their final state. The control
 protocol is test infrastructure; it is not a public wallet API or part of
 consensus.
+
+Persistent applications instead use `bbc node run --config` and the local RPC
+described in [`rpc.md`](rpc.md). The two configuration schemas and command
+surfaces intentionally remain separate even though they share the same runtime.
 
 ## Actor command
 
