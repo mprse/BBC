@@ -19,6 +19,8 @@ when a topic crosses subsystem boundaries.
   scenario files, execution, assertions, and artifacts.
 - [`persistent-network-test.md`](persistent-network-test.md) provides a manual
   two-node flow through normal configuration and RPC commands.
+- [`lan-operation.md`](lan-operation.md) explains safe P2P testing between two
+  Windows computers on one private network.
 
 ## Data and consensus
 

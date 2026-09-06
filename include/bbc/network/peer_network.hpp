@@ -18,6 +18,11 @@ enum class PeerDirection {
     outbound,
 };
 
+enum class PeerAddressScope {
+    loopback,
+    private_network,
+};
+
 struct PeerStatus {
     std::uint64_t id = 0;
     PeerDirection direction = PeerDirection::inbound;
@@ -46,6 +51,8 @@ struct PeerNetworkConfig {
     std::uint64_t tip_height = 0;
     crypto::Hash256 tip_block_id{};
     crypto::Hash256 genesis_block_id{};
+    std::string listen_host = "127.0.0.1";
+    PeerAddressScope address_scope = PeerAddressScope::loopback;
 };
 
 using PeerEventHandler = std::function<void(const PeerEvent&)>;
@@ -100,5 +107,9 @@ private:
 };
 
 [[nodiscard]] std::string_view peer_direction_name(PeerDirection direction) noexcept;
+[[nodiscard]] bool peer_address_allowed(
+    std::string_view host,
+    PeerAddressScope scope
+) noexcept;
 
 }  // namespace bbc::network

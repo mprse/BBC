@@ -30,12 +30,12 @@ implemented. The scenario runner retains its independent
   "data_directory": "data",
   "full_node": {
     "listen": {
-      "host": "127.0.0.1",
+      "host": "192.168.1.10",
       "port": 7333
     },
     "peers": [
       {
-        "host": "seed.example.org",
+        "host": "192.168.1.20",
         "port": 7333
       }
     ]
@@ -98,10 +98,9 @@ the running process.
 
 ```json
 {
-  "listen": {"host": "0.0.0.0", "port": 7333},
+  "listen": {"host": "192.168.1.10", "port": 7333},
   "peers": [
-    {"host": "192.168.1.20", "port": 7333},
-    {"host": "seed.example.org", "port": 7333}
+    {"host": "192.168.1.20", "port": 7333}
   ]
 }
 ```
@@ -112,11 +111,14 @@ range from 1 through 65535. Version 1 host values support DNS names and IPv4
 literals; whitespace, control characters, URL schemes, paths, and embedded
 ports are rejected. The listener itself cannot also appear as an initial peer.
 
-Version 1 parsing accepts future LAN, public, and DNS endpoints, but the current
-runtime starts only when the P2P listener and every initial peer use numeric
-IPv4 loopback. Other values fail before exposure or connection. LAN and public
-listening require firewall guidance, peer hardening, and dedicated security
-tests.
+Version 1 parsing accepts syntactically valid DNS names and IPv4 endpoints, but
+the current persistent runtime starts only when its P2P listener, initial peers,
+and mining source use numeric IPv4 loopback or private RFC 1918 addresses. The
+private ranges are `10.0.0.0/8`, `172.16.0.0/12`, and `192.168.0.0/16`.
+Wildcard `0.0.0.0`, public addresses, DNS names, and IPv6 are rejected before
+the node creates its RPC token or persistent state. The listener must name one
+exact address assigned to the local computer. See
+[`lan-operation.md`](lan-operation.md) for configuration and firewall guidance.
 
 ## Miner settings
 

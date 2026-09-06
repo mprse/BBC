@@ -195,6 +195,8 @@ private keys, wallet passwords, or decrypted wallet material.
 
 The runner and actor control server are intentionally loopback-only. The P2P
 implementation is exercised across real TCP sockets, but the product does not
-yet provide public node configuration, peer discovery, NAT traversal, a secured
-wallet RPC, or deployment tooling. Those capabilities are required before the
-same executable can be operated safely across a LAN or the public Internet.
+yet provide public node discovery, NAT traversal, a secured remote wallet RPC,
+or deployment tooling. Persistent application P2P can run between explicitly
+configured RFC 1918 addresses on one trusted LAN as described in
+[`lan-operation.md`](lan-operation.md), but public Internet operation requires
+the remaining capabilities and a separate security review.

@@ -141,6 +141,14 @@ On EC2, also plan for:
 
 Do not expose the loopback test-control endpoint to a LAN or the Internet.
 
+## Private LAN testing
+
+The Windows build can bind application P2P to one private RFC 1918 address for
+testing between computers on the same trusted network. Keep RPC on
+`127.0.0.1`, open only the selected P2P TCP port on the Windows Private firewall
+profile, and follow [`lan-operation.md`](lan-operation.md). Public Internet and
+EC2 P2P exposure remain separate deployment work.
+
 ## macOS
 
 The `macos-clang-debug` preset selects Clang and otherwise follows the same

@@ -290,7 +290,7 @@ TEST_CASE("RPC tokens are generated once and validated", "[rpc]") {
     CHECK(rejected.error() == bbc::rpc::TokenError::invalid_token);
 }
 
-TEST_CASE("persistent node rejects non-loopback P2P before creating secrets", "[rpc][node]") {
+TEST_CASE("persistent node rejects unsafe P2P before creating secrets", "[rpc][node]") {
     TemporaryRpcDirectory directory;
     const std::filesystem::path config_path = directory.path() / "bbc.json";
     const nlohmann::json config{
@@ -323,7 +323,7 @@ TEST_CASE("persistent node rejects non-loopback P2P before creating secrets", "[
         error_output
     ) == 1);
     CHECK(output.str().empty());
-    CHECK(error_output.str().find("only a 127.0.0.1 P2P listener") !=
+    CHECK(error_output.str().find("RFC 1918 LAN address") !=
           std::string::npos);
     CHECK_FALSE(std::filesystem::exists(directory.path() / "rpc.token"));
     CHECK_FALSE(std::filesystem::exists(directory.path() / "data"));
@@ -479,7 +479,7 @@ TEST_CASE("two persistent nodes confirm payment and recover after restart", "[rp
         {"full_node", {
             {"listen", {{"host", "127.0.0.1"}, {"port", ports[0]}}},
             {"peers", {
-                {{"host", "127.0.0.1"}, {"port", ports[2]}},
+                {{"host", "127.0.0.2"}, {"port", ports[2]}},
             }},
         }},
         {"miner", {
@@ -498,7 +498,7 @@ TEST_CASE("two persistent nodes confirm payment and recover after restart", "[rp
         {"wallet", {{"file", "recipient.wallet"}}},
         {"data_directory", "node-b-data"},
         {"full_node", {
-            {"listen", {{"host", "127.0.0.1"}, {"port", ports[2]}}},
+            {"listen", {{"host", "127.0.0.2"}, {"port", ports[2]}}},
             {"peers", nlohmann::json::array()},
         }},
         {"rpc", {

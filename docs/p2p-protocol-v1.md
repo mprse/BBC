@@ -165,10 +165,16 @@ explicitly overrides a limit.
 
 ## 9. Topology and control behavior
 
-Only an actor with the `full_node` role exposes a P2P listener. It binds to the
-configured loopback host and may use port zero so the operating system selects
-a free port. The actor reports the resolved endpoint in its structured `ready`
-event and control `status` response.
+Only a process with the `full_node` role exposes a P2P listener. Scenario actors
+bind to configured loopback ports and may use port zero so the operating system
+selects a free port. Persistent application nodes bind one exact numeric IPv4
+loopback or RFC 1918 address and use a nonzero configured port. The process
+reports the resolved endpoint in its structured `ready` event and control
+`status` response.
+
+Address exposure is application policy rather than part of the binary wire
+protocol. The current persistent runtime rejects wildcard, public, DNS, and IPv6
+P2P endpoints. Application RPC and scenario control remain loopback-only.
 
 Scenario peer names are resolved by the runner after all listeners are ready.
 The runner asks one actor to connect to another through an authenticated control
@@ -192,7 +198,9 @@ Unit tests must cover:
 - bad magic, unsupported version, unknown type, oversized length, wrong fixed
   payload size, and bad checksum;
 - handshake ordering, network mismatch, self-connection, and duplicate `HELLO`;
-- matching `PING` and `PONG` nonces.
+- matching `PING` and `PONG` nonces;
+- loopback-only and private-LAN address-policy boundaries;
+- binding the exact configured listener address.
 
 Multi-process tests must cover:
 

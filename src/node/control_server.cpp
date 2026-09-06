@@ -264,6 +264,10 @@ public:
                 tip_height,
                 tip_id,
                 genesis.id(),
+                config_.p2p_host,
+                config_.scenario
+                    ? network::PeerAddressScope::loopback
+                    : network::PeerAddressScope::private_network,
             },
             [this, &events](const network::PeerEvent& event) {
                 events.emit(
@@ -2159,27 +2163,27 @@ int run_application_node(
         error_output << "Configuration has no local RPC settings.\n";
         return 1;
     }
-    if (config.full_node.has_value() &&
-        config.full_node->listen.host != "127.0.0.1") {
-        error_output << "This runtime currently supports only a 127.0.0.1 P2P listener.\n";
+    const auto private_peer = [](const config::NetworkEndpoint& endpoint) {
+        return network::peer_address_allowed(
+            endpoint.host,
+            network::PeerAddressScope::private_network
+        );
+    };
+    if (config.full_node.has_value() && !private_peer(config.full_node->listen)) {
+        error_output << "P2P listeners must use a numeric IPv4 loopback or "
+                        "RFC 1918 LAN address.\n";
         return 1;
     }
-    const auto loopback_peer = [](const config::NetworkEndpoint& endpoint) {
-        asio::error_code address_error;
-        const asio::ip::address address =
-            asio::ip::make_address(endpoint.host, address_error);
-        return !address_error && address.is_v4() && address.to_v4().is_loopback();
-    };
     if (config.full_node.has_value() &&
-        !std::ranges::all_of(config.full_node->peers, loopback_peer)) {
-        error_output << "This runtime currently supports only numeric IPv4 "
-                        "loopback peers.\n";
+        !std::ranges::all_of(config.full_node->peers, private_peer)) {
+        error_output << "Initial peers must use numeric IPv4 loopback or "
+                        "RFC 1918 LAN addresses.\n";
         return 1;
     }
     if (config.miner.has_value() && config.miner->source.has_value() &&
-        !loopback_peer(*config.miner->source)) {
-        error_output << "This runtime currently supports only a numeric IPv4 "
-                        "loopback mining source.\n";
+        !private_peer(*config.miner->source)) {
+        error_output << "Mining sources must use a numeric IPv4 loopback or "
+                        "RFC 1918 LAN address.\n";
         return 1;
     }
     rpc::TokenResult token = rpc::load_or_create_token(config.rpc->token_file);

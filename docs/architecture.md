@@ -7,8 +7,9 @@ communication, and test orchestration. This prevents a command, database, miner,
 or remote peer from bypassing the rules that every full node must enforce.
 
 The project currently supports observable local experiments and persistent
-single-computer nodes. P2P, application RPC, and test control use real TCP but
-remain restricted to IPv4 loopback at runtime.
+nodes on one computer or one private IPv4 LAN. Application P2P may use loopback
+or RFC 1918 addresses. Application RPC, scenario P2P, and test control remain
+restricted to IPv4 loopback.
 
 ## Main data flow
 

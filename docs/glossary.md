@@ -204,6 +204,11 @@ accepted.
 **LAN — Local Area Network**
 A private local network, such as computers connected to one home router.
 
+**RFC 1918 private IPv4 address**
+An address from `10.0.0.0/8`, `172.16.0.0/12`, or `192.168.0.0/16`. Routers use
+these ranges inside private networks; they are not routed directly across the
+public Internet.
+
 **NAT — Network Address Translation**
 A router function that maps private local addresses to a public address.
 Inbound Internet connections normally require port forwarding or another NAT

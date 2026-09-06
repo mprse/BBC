@@ -36,7 +36,43 @@ std::string endpoint_text(const asio::ip::tcp::endpoint& endpoint) {
     return endpoint.address().to_string() + ':' + std::to_string(endpoint.port());
 }
 
+bool is_rfc1918(const asio::ip::address_v4& address) noexcept {
+    const auto bytes = address.to_bytes();
+    return bytes[0] == 10 ||
+        (bytes[0] == 172 && bytes[1] >= 16 && bytes[1] <= 31) ||
+        (bytes[0] == 192 && bytes[1] == 168);
+}
+
+bool address_allowed(
+    const asio::ip::address& address,
+    const PeerAddressScope scope
+) noexcept {
+    if (!address.is_v4()) {
+        return false;
+    }
+    const asio::ip::address_v4 ipv4 = address.to_v4();
+    if (ipv4.is_loopback()) {
+        return true;
+    }
+    return scope == PeerAddressScope::private_network && is_rfc1918(ipv4);
+}
+
+std::string address_scope_error(const PeerAddressScope scope) {
+    return scope == PeerAddressScope::loopback
+        ? "P2P endpoint must use a nonzero IPv4 loopback address and port."
+        : "P2P endpoint must use a nonzero IPv4 loopback or RFC 1918 address and port.";
+}
+
 }  // namespace
+
+bool peer_address_allowed(
+    const std::string_view host,
+    const PeerAddressScope scope
+) noexcept {
+    asio::error_code error;
+    const asio::ip::address address = asio::ip::make_address(host, error);
+    return !error && address_allowed(address, scope);
+}
 
 class PeerNetwork::Impl final {
 public:
@@ -61,8 +97,18 @@ public:
     [[nodiscard]] bool start(std::string& error) {
         try {
             if (config_.listen) {
+                asio::error_code address_error;
+                const asio::ip::address address = asio::ip::make_address(
+                    config_.listen_host,
+                    address_error
+                );
+                if (address_error ||
+                    !address_allowed(address, config_.address_scope)) {
+                    error = address_scope_error(config_.address_scope);
+                    return false;
+                }
                 const asio::ip::tcp::endpoint endpoint{
-                    asio::ip::make_address_v4("127.0.0.1"),
+                    address,
                     config_.listen_port,
                 };
                 acceptor_.open(endpoint.protocol());
@@ -117,9 +163,9 @@ public:
     ) {
         asio::error_code address_error;
         const asio::ip::address address = asio::ip::make_address(host, address_error);
-        if (address_error || !address.is_v4() || !address.to_v4().is_loopback() ||
+        if (address_error || !address_allowed(address, config_.address_scope) ||
             port == 0) {
-            error = "P2P endpoint must use a nonzero 127.0.0.0/8 port.";
+            error = address_scope_error(config_.address_scope);
             return false;
         }
         const asio::ip::tcp::endpoint endpoint{address, port};
@@ -134,9 +180,9 @@ public:
     ) {
         asio::error_code address_error;
         const asio::ip::address address = asio::ip::make_address(host, address_error);
-        if (address_error || !address.is_v4() || !address.to_v4().is_loopback() ||
+        if (address_error || !address_allowed(address, config_.address_scope) ||
             port == 0) {
-            error = "P2P endpoint must use a nonzero 127.0.0.0/8 port.";
+            error = address_scope_error(config_.address_scope);
             return false;
         }
         const asio::ip::tcp::endpoint endpoint{address, port};

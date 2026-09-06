@@ -417,6 +417,40 @@ TEST_CASE("an outbound peer target can be disconnected without reconnecting", "[
     server.stop();
 }
 
+TEST_CASE("P2P address scopes separate scenarios from LAN nodes", "[network]") {
+    using bbc::network::PeerAddressScope;
+
+    CHECK(bbc::network::peer_address_allowed("127.0.0.1", PeerAddressScope::loopback));
+    CHECK(bbc::network::peer_address_allowed("127.0.0.2", PeerAddressScope::loopback));
+    CHECK_FALSE(bbc::network::peer_address_allowed("10.0.0.2", PeerAddressScope::loopback));
+
+    CHECK(bbc::network::peer_address_allowed("10.0.0.2", PeerAddressScope::private_network));
+    CHECK(bbc::network::peer_address_allowed("172.16.0.1", PeerAddressScope::private_network));
+    CHECK(bbc::network::peer_address_allowed("172.31.255.254", PeerAddressScope::private_network));
+    CHECK(bbc::network::peer_address_allowed("192.168.1.20", PeerAddressScope::private_network));
+    CHECK_FALSE(bbc::network::peer_address_allowed("172.32.0.1", PeerAddressScope::private_network));
+    CHECK_FALSE(bbc::network::peer_address_allowed("0.0.0.0", PeerAddressScope::private_network));
+    CHECK_FALSE(bbc::network::peer_address_allowed("8.8.8.8", PeerAddressScope::private_network));
+    CHECK_FALSE(bbc::network::peer_address_allowed("seed.example.org", PeerAddressScope::private_network));
+    CHECK_FALSE(bbc::network::peer_address_allowed("::1", PeerAddressScope::private_network));
+}
+
+TEST_CASE("P2P listener binds its configured loopback address", "[network]") {
+    bbc::network::PeerNetworkConfig config = test_network_config();
+    config.listen_host = "127.0.0.2";
+    bbc::network::PeerNetwork server{std::move(config), {}};
+    std::string error;
+    REQUIRE(server.start(error));
+
+    asio::io_context context;
+    asio::ip::tcp::socket socket{context};
+    socket.connect({asio::ip::make_address_v4("127.0.0.2"), server.listen_port()});
+    const ReceivedFrame hello = receive_frame(socket);
+    CHECK(hello.header.type == bbc::network::MessageType::hello);
+
+    server.stop();
+}
+
 TEST_CASE("P2P handshake rejects invalid ordering and identity", "[network]") {
     SECTION("PING before HELLO") {
         CHECK(rejected_after_frames(
