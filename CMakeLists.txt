@@ -7,6 +7,8 @@ project(
     LANGUAGES CXX
 )
 
+include(GNUInstallDirs)
+
 include(CTest)
 find_package(asio CONFIG REQUIRED)
 find_package(nlohmann_json CONFIG REQUIRED)
@@ -78,6 +80,36 @@ add_executable(bbc src/main.cpp)
 target_link_libraries(bbc PRIVATE bbc_core)
 set_target_properties(bbc PROPERTIES CXX_EXTENSIONS OFF)
 bbc_enable_warnings(bbc)
+
+set(BBC_INSTALL_DOCDIR "${CMAKE_INSTALL_DATAROOTDIR}/doc/bbc")
+
+install(TARGETS bbc RUNTIME DESTINATION "${CMAKE_INSTALL_BINDIR}")
+install(
+    FILES README.md LICENSE
+    DESTINATION "${BBC_INSTALL_DOCDIR}"
+)
+install(
+    DIRECTORY docs/
+    DESTINATION "${BBC_INSTALL_DOCDIR}/docs"
+    FILES_MATCHING PATTERN "*.md"
+)
+install(
+    FILES examples/ec2-node.json
+    DESTINATION "${CMAKE_INSTALL_DATADIR}/bbc/examples"
+)
+
+if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
+    set(CPACK_GENERATOR "TGZ")
+    set(CPACK_INCLUDE_TOPLEVEL_DIRECTORY OFF)
+    set(
+        CPACK_PACKAGE_FILE_NAME
+        "bbc-${PROJECT_VERSION}-linux-${CMAKE_SYSTEM_PROCESSOR}"
+    )
+    set(CPACK_PACKAGE_VENDOR "BBC educational project")
+    set(CPACK_PACKAGE_DESCRIPTION_SUMMARY "Bi-Bi-Coin educational node")
+    set(CPACK_VERBATIM_VARIABLES YES)
+    include(CPack)
+endif()
 
 if(BUILD_TESTING)
     find_package(Catch2 3 CONFIG REQUIRED)

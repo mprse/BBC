@@ -43,15 +43,23 @@ python tools/build.py configure
 python tools/build.py build
 python tools/build.py test
 python tools/build.py run
+python tools/build.py package
 python tools/build.py shell
 ```
+
+`package` is available on Linux and selects the release preset by default. The
+other actions continue to select the platform's debug preset unless `--preset`
+overrides it.
 
 `build` is the default action. Build output is isolated by preset:
 
 ```text
 build/windows-msvc-debug/
+build/windows-msvc-release/
 build/linux-gcc-debug/
+build/linux-gcc-release/
 build/macos-clang-debug/
+build/macos-clang-release/
 ```
 
 ## Windows development
@@ -126,9 +134,20 @@ python3 tools/build.py run
 ```
 
 The selected preset is `linux-gcc-debug`. It builds with
-`-Wall -Wextra -Wpedantic`. A release preset and install/package workflow will be
-added before deploying a persistent EC2 node; debug build directories are not a
-deployment format.
+`-Wall -Wextra -Wpedantic`. Verify the optimized executable and create the
+deployment archive with:
+
+```console
+python3 tools/build.py build --preset linux-gcc-release
+python3 tools/build.py package
+```
+
+The package command configures `linux-gcc-release`, builds with tests disabled,
+and runs CPack. It writes
+`build/linux-gcc-release/bbc-<version>-linux-<architecture>.tar.gz`. The archive
+contains `bin/bbc`, the EC2 configuration template, the license, and reference
+documentation. Build the archive on the same Linux architecture used by the
+target EC2 instance; a Windows binary is not a Linux deployment artifact.
 
 On EC2, also plan for:
 
@@ -141,8 +160,8 @@ On EC2, also plan for:
 
 Do not expose the loopback application RPC or test-control endpoint to a LAN or
 the Internet. Static Internet P2P configuration is documented in
-[`internet-p2p.md`](internet-p2p.md), but release packaging and service
-operation remain future work.
+[`internet-p2p.md`](internet-p2p.md). Managed service operation is documented
+separately from compilation and packaging.
 
 ## Private LAN testing
 
@@ -155,9 +174,10 @@ EC2 P2P exposure use the explicit `internet` address scope described in
 
 ## macOS
 
-The `macos-clang-debug` preset selects Clang and otherwise follows the same
-Python, CMake, Ninja, and vcpkg workflow. macOS is a supported project target but
-is not part of the current Windows-to-EC2 deployment path.
+The `macos-clang-debug` and `macos-clang-release` presets select Clang and
+otherwise follow the same Python, CMake, Ninja, and vcpkg workflow. macOS is a
+supported project target but is not part of the current Windows-to-EC2
+deployment path.
 
 ## Dependency behavior
 

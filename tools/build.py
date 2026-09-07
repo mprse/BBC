@@ -21,6 +21,11 @@ DEFAULT_PRESETS = {
     "Linux": "linux-gcc-debug",
     "Darwin": "macos-clang-debug",
 }
+DEFAULT_RELEASE_PRESETS = {
+    "Windows": "windows-msvc-release",
+    "Linux": "linux-gcc-release",
+    "Darwin": "macos-clang-release",
+}
 
 
 class ToolchainError(RuntimeError):
@@ -29,11 +34,11 @@ class ToolchainError(RuntimeError):
 
 def parse_arguments() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Configure, build, run, or open a configured shell for BBC."
+        description="Configure, build, test, run, or package BBC."
     )
     parser.add_argument(
         "action",
-        choices=("configure", "build", "test", "run", "shell"),
+        choices=("configure", "build", "test", "run", "package", "shell"),
         nargs="?",
         default="build",
         help="operation to perform (default: build)",
@@ -210,6 +215,16 @@ def test(ctest: str, cmake: str, preset: str, environment: dict[str, str]) -> No
     run_command((ctest, "--preset", preset), environment)
 
 
+def package(cmake: str, preset: str, environment: dict[str, str]) -> None:
+    if platform.system() != "Linux":
+        raise ToolchainError("Deployment packages can currently be built only on Linux.")
+    build(cmake, preset, environment)
+    run_command(
+        (cmake, "--build", "--preset", preset, "--target", "package"),
+        environment,
+    )
+
+
 def run_program(preset: str, environment: dict[str, str]) -> None:
     executable_name = "bbc.exe" if platform.system() == "Windows" else "bbc"
     executable = PROJECT_ROOT / "build" / preset / executable_name
@@ -234,7 +249,12 @@ def open_shell(environment: dict[str, str]) -> None:
 def main() -> int:
     arguments = parse_arguments()
     system = platform.system()
-    preset = arguments.preset or DEFAULT_PRESETS.get(system)
+    defaults = (
+        DEFAULT_RELEASE_PRESETS
+        if arguments.action == "package"
+        else DEFAULT_PRESETS
+    )
+    preset = arguments.preset or defaults.get(system)
     if preset is None:
         raise ToolchainError(f"Unsupported platform: {system}")
 
@@ -257,6 +277,8 @@ def main() -> int:
     elif arguments.action == "run":
         build(cmake, preset, environment)
         run_program(preset, environment)
+    elif arguments.action == "package":
+        package(cmake, preset, environment)
 
     return 0
 

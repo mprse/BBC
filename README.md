@@ -41,6 +41,12 @@ for its child processes, configures CMake, installs declared vcpkg dependencies,
 builds with Ninja, and runs CTest. It does not modify the machine environment or
 require a PowerShell execution-policy change.
 
+Linux release archives for deployment are built on Linux with:
+
+```console
+python3 tools/build.py package
+```
+
 After building, invoke the Windows executable directly with:
 
 ```console

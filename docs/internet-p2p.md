@@ -101,10 +101,10 @@ connections are the planned mitigation.
 
 ## Remaining deployment work
 
-The executable can now express and enforce static numeric IPv4 connectivity,
-but EC2 operation still requires:
+The executable can express and enforce static numeric IPv4 connectivity, and
+the CMake project can produce a Linux release archive. EC2 operation still
+requires:
 
-- a Linux release build and install layout;
 - a `systemd` service and graceful restart policy;
 - durable storage, logs, health checks, and backups;
 - a real multi-host connectivity and synchronization test.

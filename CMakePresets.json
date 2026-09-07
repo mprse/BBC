@@ -17,6 +17,17 @@
             }
         },
         {
+            "name": "release-base",
+            "hidden": true,
+            "generator": "Ninja",
+            "binaryDir": "${sourceDir}/build/${presetName}",
+            "toolchainFile": "$env{VCPKG_ROOT}/scripts/buildsystems/vcpkg.cmake",
+            "cacheVariables": {
+                "BUILD_TESTING": "OFF",
+                "CMAKE_BUILD_TYPE": "Release"
+            }
+        },
+        {
             "name": "windows-msvc-debug",
             "displayName": "Windows MSVC Debug",
             "description": "Build BBC with MSVC and Ninja in Debug mode",
@@ -45,10 +56,52 @@
             }
         },
         {
+            "name": "linux-gcc-release",
+            "displayName": "Linux GCC Release",
+            "description": "Build the deployable BBC executable with GCC and Ninja",
+            "inherits": "release-base",
+            "condition": {
+                "type": "equals",
+                "lhs": "${hostSystemName}",
+                "rhs": "Linux"
+            },
+            "cacheVariables": {
+                "CMAKE_CXX_COMPILER": "g++"
+            }
+        },
+        {
             "name": "macos-clang-debug",
             "displayName": "macOS Clang Debug",
             "description": "Build BBC with Clang and Ninja in Debug mode",
             "inherits": "debug-base",
+            "condition": {
+                "type": "equals",
+                "lhs": "${hostSystemName}",
+                "rhs": "Darwin"
+            },
+            "cacheVariables": {
+                "CMAKE_CXX_COMPILER": "clang++"
+            }
+        },
+        {
+            "name": "windows-msvc-release",
+            "displayName": "Windows MSVC Release",
+            "description": "Build BBC with MSVC and Ninja in Release mode",
+            "inherits": "release-base",
+            "condition": {
+                "type": "equals",
+                "lhs": "${hostSystemName}",
+                "rhs": "Windows"
+            },
+            "cacheVariables": {
+                "CMAKE_CXX_COMPILER": "cl"
+            }
+        },
+        {
+            "name": "macos-clang-release",
+            "displayName": "macOS Clang Release",
+            "description": "Build BBC with Clang and Ninja in Release mode",
+            "inherits": "release-base",
             "condition": {
                 "type": "equals",
                 "lhs": "${hostSystemName}",
@@ -71,9 +124,24 @@
             "configurePreset": "linux-gcc-debug"
         },
         {
+            "name": "linux-gcc-release",
+            "displayName": "Build Linux GCC Release",
+            "configurePreset": "linux-gcc-release"
+        },
+        {
             "name": "macos-clang-debug",
             "displayName": "Build macOS Clang Debug",
             "configurePreset": "macos-clang-debug"
+        },
+        {
+            "name": "windows-msvc-release",
+            "displayName": "Build Windows MSVC Release",
+            "configurePreset": "windows-msvc-release"
+        },
+        {
+            "name": "macos-clang-release",
+            "displayName": "Build macOS Clang Release",
+            "configurePreset": "macos-clang-release"
         }
     ],
     "testPresets": [

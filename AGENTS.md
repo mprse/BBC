@@ -87,6 +87,7 @@ python tools/build.py configure
 python tools/build.py build
 python tools/build.py test
 python tools/build.py run
+python tools/build.py package
 python tools/build.py shell
 ```
 
@@ -99,8 +100,14 @@ python tools/build.py
 Platform presets are:
 
 - `windows-msvc-debug`
+- `windows-msvc-release`
 - `linux-gcc-debug`
+- `linux-gcc-release`
 - `macos-clang-debug`
+- `macos-clang-release`
+
+`package` is currently a Linux-only deployment action and defaults to
+`linux-gcc-release`.
 
 The helper must remain usable from ordinary PowerShell, `cmd`, Bash, and CI. On
 Windows it discovers Visual Studio with `vswhere` and passes the prepared MSVC
