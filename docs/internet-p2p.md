@@ -43,6 +43,7 @@ the `full_node` and `miner` roles. Replace its placeholder values before use:
 - set `full_node.listen.host` to the EC2 instance's private IPv4 address;
 - allocate a stable Elastic IP and record it for other nodes;
 - replace `miner.reward_address` with the address of the reward wallet;
+- keep `miner.auto_start` enabled for continuous mining;
 - choose persistent paths for the node data and RPC token.
 
 AWS normally maps the Elastic IP to the instance's private address. The BBC
@@ -106,5 +107,4 @@ but EC2 operation still requires:
 - a Linux release build and install layout;
 - a `systemd` service and graceful restart policy;
 - durable storage, logs, health checks, and backups;
-- continuous mining policy instead of one RPC-triggered mining cycle;
 - a real multi-host connectivity and synchronization test.

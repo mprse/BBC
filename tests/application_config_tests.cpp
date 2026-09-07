@@ -61,7 +61,10 @@ std::string hybrid_config() {
                 {"host": "192.168.1.20", "port": 8333}
             ]
         },
-        "miner": {"reward_address": ")"} + std::string{reward_address} + R"("},
+        "miner": {
+            "reward_address": ")"} + std::string{reward_address} + R"(",
+            "auto_start": true
+        },
         "rpc": {
             "listen": {"host": "127.0.0.1", "port": 7334},
             "token_file": "rpc.token"
@@ -98,6 +101,7 @@ TEST_CASE("application configuration loads all persistent roles", "[config]") {
     REQUIRE(config.miner.has_value());
     CHECK(config.miner->reward_address.value() == reward_address);
     CHECK_FALSE(config.miner->source.has_value());
+    CHECK(config.miner->auto_start);
     REQUIRE(config.rpc.has_value());
     CHECK(config.rpc->listen.port == 7334);
     CHECK(config.rpc->token_file == file.path().parent_path() / "rpc.token");
@@ -120,6 +124,25 @@ TEST_CASE("application configuration defaults P2P scope to LAN", "[config]") {
     REQUIRE(loaded.has_value());
     REQUIRE(loaded.value().full_node.has_value());
     CHECK(loaded.value().full_node->scope == bbc::config::P2pScope::lan);
+}
+
+TEST_CASE("application configuration defaults miner auto-start to disabled", "[config]") {
+    std::string encoded = hybrid_config();
+    const std::string auto_start = ",\n            \"auto_start\": true";
+    const std::size_t position = encoded.find(auto_start);
+    REQUIRE(position != std::string::npos);
+    encoded.erase(position, auto_start.size());
+    TemporaryApplicationConfig file{
+        "bbc-application-config-default-mining.json",
+        encoded,
+    };
+
+    const bbc::config::ApplicationConfigResult loaded =
+        bbc::config::load_application_config(file.path());
+
+    REQUIRE(loaded.has_value());
+    REQUIRE(loaded.value().miner.has_value());
+    CHECK_FALSE(loaded.value().miner->auto_start);
 }
 
 TEST_CASE("wallet-only application configuration needs no service sections", "[config]") {
@@ -323,6 +346,21 @@ TEST_CASE("application configuration rejects unsafe or ambiguous input", "[confi
         CHECK(loaded.error() == bbc::config::ApplicationConfigError::invalid_full_node);
     }
 
+    SECTION("non-boolean miner auto-start is rejected") {
+        std::string encoded = hybrid_config();
+        const std::string original = "\"auto_start\": true";
+        const std::size_t position = encoded.find(original);
+        REQUIRE(position != std::string::npos);
+        encoded.replace(position, original.size(), "\"auto_start\": \"yes\"");
+        TemporaryApplicationConfig file{
+            "bbc-application-config-invalid-miner-auto-start.json",
+            encoded,
+        };
+        const auto loaded = bbc::config::load_application_config(file.path());
+        CHECK_FALSE(loaded.has_value());
+        CHECK(loaded.error() == bbc::config::ApplicationConfigError::invalid_miner);
+    }
+
     SECTION("malformed numeric IP addresses are rejected") {
         std::string encoded = hybrid_config();
         const std::string original = "192.168.1.20";
@@ -369,6 +407,8 @@ TEST_CASE("configuration CLI validates and shows normalized settings", "[config]
     CHECK(show_output.str().find("P2P listen: 127.0.0.1:7333") !=
           std::string::npos);
     CHECK(show_output.str().find("Mining source: local full node") !=
+          std::string::npos);
+    CHECK(show_output.str().find("Mining auto-start: yes") !=
           std::string::npos);
     CHECK(show_output.str().find("RPC listen: 127.0.0.1:7334") !=
           std::string::npos);

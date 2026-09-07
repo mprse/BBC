@@ -63,7 +63,9 @@ full-node connection; a standalone wallet network client is not implemented.
 
 A miner searches for Proof of Work on a template. It does not choose balances,
 fees, or the active chain. A mining-only process relies on its connected full
-node for current templates.
+node for current templates. Persistent miners support a single attempt or an
+explicit continuous policy. Continuous work is cancelled when the active tip
+changes, then restarted from a new template whose parent is the new tip.
 
 A full node stores block history and independently validates everything. Its
 active chain determines confirmed balances and nonces. Full nodes may disagree

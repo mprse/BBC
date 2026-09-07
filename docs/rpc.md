@@ -38,6 +38,8 @@ bbc rpc status --config bbc.json
 bbc rpc dump --config bbc.json
 bbc rpc ping --config bbc.json
 bbc rpc start-mining --config bbc.json
+bbc rpc start-continuous-mining --config bbc.json
+bbc rpc stop-mining --config bbc.json
 bbc rpc submit --config bbc.json --transaction payment.bbctx
 bbc rpc stop --config bbc.json
 ```
@@ -50,6 +52,11 @@ bbc rpc stop --config bbc.json
 - `ping` asks the P2P layer to send a `PING` to every handshaken peer.
 - `start-mining` starts one mining cycle. A combined full node and miner builds
   locally; a mining-only process requests a template from its source peer.
+- `start-continuous-mining` enables repeated cycles. After an accepted block or
+  a stale-work cancellation, the miner obtains a candidate for the current tip
+  and starts again.
+- `stop-mining` disables continuous mode, cancels current work, and waits for
+  the mining worker to finish cleanly.
 - `submit` validates a canonical signed transaction file, sends its public bytes
   to the node, and reports its transaction ID after mempool admission or remote
   submission.
@@ -76,10 +83,16 @@ Failures contain `ok: false` and a stable error `code` plus human-readable
 unauthenticated requests do not mutate node state.
 
 The application methods are `health`, `status`, `dump`, `ping`, `start_mining`,
-`submit_signed_transaction`, and `shutdown`. The shared runtime also implements
-additional scenario-only methods documented in [`node-control.md`](node-control.md);
-they are not exposed by the persistent CLI and must not be treated as a stable
-application API.
+`start_continuous_mining`, `stop_mining`, `submit_signed_transaction`, and
+`shutdown`. The shared runtime also implements additional scenario-only methods
+documented in [`node-control.md`](node-control.md); they are not exposed by the
+persistent CLI and must not be treated as a stable application API.
+
+The `mining` object returned by `status` contains `active`, `continuous`,
+`auto_start`, `state`, current-attempt count, and the miner's known tip. The
+continuous flag describes the requested policy; `active` describes whether a
+worker is hashing at that instant. A mining-only process may therefore report
+continuous mode with state `waiting` while no full-node source is connected.
 
 ## Current limits
 
@@ -88,8 +101,6 @@ application API.
   scope; DNS names and IPv6 are not supported.
 - RPC is synchronous and intended for one local operator, not high request
   volume or untrusted public clients.
-- `start-mining` starts one block attempt; continuous mining policy is not yet
-  implemented.
 - The user creates and signs `.bbctx` before `rpc submit`; a combined
   create-sign-submit command is not yet implemented.
 

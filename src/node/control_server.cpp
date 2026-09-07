@@ -22,6 +22,7 @@
 #include <cstddef>
 #include <atomic>
 #include <chrono>
+#include <condition_variable>
 #include <cstdint>
 #include <filesystem>
 #include <iostream>
@@ -58,6 +59,7 @@ struct RuntimeConfig {
     std::optional<wallet::Address> reward_address;
     bool ephemeral_wallet = false;
     bool scenario = false;
+    bool auto_start_mining = false;
 
     [[nodiscard]] bool has_role(const ActorRole role) const noexcept {
         return std::ranges::find(roles, role) != roles.end();
@@ -113,6 +115,7 @@ RuntimeConfig runtime_config(ScenarioActorConfig config) {
         std::nullopt,
         true,
         true,
+        false,
     };
 }
 
@@ -151,6 +154,7 @@ RuntimeConfig runtime_config(
             : std::nullopt,
         false,
         false,
+        application.miner.has_value() && application.miner->auto_start,
     };
     if (!full_node) {
         result.p2p_port = 0;
@@ -317,10 +321,20 @@ public:
                 return false;
             }
         }
+        if (config_.has_role(ActorRole::miner) && !config_.scenario) {
+            start_mining_coordinator();
+        }
         return true;
     }
 
     void stop_network() noexcept {
+        runtime_stopping_.store(true);
+        continuous_mining_enabled_.store(false);
+        mining_cancelled_.store(true);
+        mining_coordinator_condition_.notify_all();
+        if (mining_coordinator_thread_.joinable()) {
+            mining_coordinator_thread_.join();
+        }
         mining_cancelled_.store(true);
         if (network_.has_value()) {
             network_->stop();
@@ -366,11 +380,20 @@ public:
 
     [[nodiscard]] bool start_mining(
         const bool defer_work,
-        std::string& error
+        std::string& error,
+        const bool continuous_cycle = false
     ) {
         if (!config_.has_role(ActorRole::miner) ||
             !config_.reward_address.has_value() || !network_.has_value()) {
             error = "Node is not configured as a miner.";
+            return false;
+        }
+        if (continuous_cycle && !continuous_mining_enabled_.load()) {
+            error = "Continuous mining is not enabled.";
+            return false;
+        }
+        if (!continuous_cycle && continuous_mining_enabled_.load()) {
+            error = "Continuous mining is already enabled.";
             return false;
         }
         if (mining_active_.load()) {
@@ -463,6 +486,65 @@ public:
             return false;
         }
         emit("mining_template_requested", {{"peer_id", source->id}});
+        return true;
+    }
+
+    [[nodiscard]] bool start_continuous_mining(std::string& error) {
+        if (config_.scenario || !config_.has_role(ActorRole::miner) ||
+            !config_.reward_address.has_value() || !network_.has_value()) {
+            error = "Node is not configured for persistent mining.";
+            return false;
+        }
+        bool expected = false;
+        if (!continuous_mining_enabled_.compare_exchange_strong(expected, true)) {
+            error = "Continuous mining is already enabled.";
+            return false;
+        }
+        emit("continuous_mining_started", {
+            {"auto_start", config_.auto_start_mining},
+        });
+        mining_coordinator_condition_.notify_all();
+        return true;
+    }
+
+    [[nodiscard]] bool stop_mining(std::string& error) {
+        if (!config_.has_role(ActorRole::miner)) {
+            error = "Node is not configured as a miner.";
+            return false;
+        }
+        continuous_mining_enabled_.store(false);
+        mining_coordinator_condition_.notify_all();
+        std::lock_guard operation_lock{mining_operation_mutex_};
+        mining_cancelled_.store(true);
+        {
+            std::lock_guard lock{mining_mutex_};
+            pending_template_request_.reset();
+            mining_source_peer_.reset();
+            mining_parent_.reset();
+            mining_height_.reset();
+            found_block_id_.reset();
+            prepared_mining_candidate_.reset();
+            prepared_mining_peer_.reset();
+            defer_mining_start_ = false;
+        }
+        if (mining_thread_.joinable()) {
+            mining_thread_.join();
+        }
+        mining_active_.store(false);
+        set_mining_state("stopped");
+        emit("mining_stopped", {});
+        return true;
+    }
+
+    [[nodiscard]] bool start_configured_mining(std::ostream& error_output) {
+        if (!config_.auto_start_mining) {
+            return true;
+        }
+        std::string error;
+        if (!start_continuous_mining(error)) {
+            error_output << "Could not start configured mining: " << error << '\n';
+            return false;
+        }
         return true;
     }
 
@@ -687,6 +769,8 @@ public:
             result["mining"] = {
                 {"active", mining_active_.load()},
                 {"attempts", mining_attempts_.load()},
+                {"continuous", continuous_mining_enabled_.load()},
+                {"auto_start", config_.auto_start_mining},
                 {"state", mining_state_},
                 {"known_height", mining_known_height_},
                 {"known_tip", crypto::to_upper_hex(mining_known_tip_)},
@@ -808,8 +892,63 @@ private:
     }
 
     void set_mining_state(const std::string_view state) {
+        {
+            std::lock_guard lock{mining_mutex_};
+            mining_state_ = state;
+        }
+        mining_coordinator_condition_.notify_all();
+    }
+
+    [[nodiscard]] bool mining_cycle_pending() const {
+        if (mining_active_.load()) {
+            return true;
+        }
         std::lock_guard lock{mining_mutex_};
-        mining_state_ = state;
+        return pending_template_request_.has_value() ||
+            prepared_mining_candidate_.has_value() ||
+            mining_state_ == "submitted";
+    }
+
+    void start_mining_coordinator() {
+        mining_coordinator_thread_ = std::thread{[this] {
+            std::string last_wait_reason;
+            std::unique_lock wait_lock{mining_coordinator_mutex_};
+            while (!runtime_stopping_.load()) {
+                mining_coordinator_condition_.wait(wait_lock, [this] {
+                    return runtime_stopping_.load() ||
+                        continuous_mining_enabled_.load();
+                });
+                if (runtime_stopping_.load()) {
+                    break;
+                }
+                wait_lock.unlock();
+                if (!mining_cycle_pending()) {
+                    std::string error;
+                    bool started = false;
+                    {
+                        std::lock_guard operation_lock{mining_operation_mutex_};
+                        if (continuous_mining_enabled_.load() &&
+                            !runtime_stopping_.load()) {
+                            started = start_mining(false, error, true);
+                        }
+                    }
+                    if (started) {
+                        last_wait_reason.clear();
+                    } else if (continuous_mining_enabled_.load() &&
+                               !runtime_stopping_.load() &&
+                               !error.empty() && error != last_wait_reason) {
+                        set_mining_state("waiting");
+                        emit("continuous_mining_waiting", {{"reason", error}});
+                        last_wait_reason = std::move(error);
+                    }
+                }
+                wait_lock.lock();
+                mining_coordinator_condition_.wait_for(
+                    wait_lock,
+                    std::chrono::milliseconds{250}
+                );
+            }
+        }};
     }
 
     void launch_mining(
@@ -1793,11 +1932,17 @@ private:
     EventEmitter* events_ = nullptr;
     mutable std::mutex state_mutex_;
     mutable std::mutex mining_mutex_;
+    mutable std::mutex mining_operation_mutex_;
+    mutable std::mutex mining_coordinator_mutex_;
     mutable std::mutex transaction_mutex_;
     mutable std::mutex sync_mutex_;
     std::thread mining_thread_;
+    std::thread mining_coordinator_thread_;
+    std::condition_variable mining_coordinator_condition_;
     std::atomic_bool mining_cancelled_{false};
     std::atomic_bool mining_active_{false};
+    std::atomic_bool continuous_mining_enabled_{false};
+    std::atomic_bool runtime_stopping_{false};
     std::atomic_uint64_t mining_attempts_{0};
     std::string mining_state_ = "idle";
     std::uint64_t next_template_request_ = 1;
@@ -1872,7 +2017,8 @@ nlohmann::json handle_request(
         return {{"id", id}, {"ok", true}, {"result", runtime.status(true)}};
     }
     if (!runtime.config().scenario && method != "ping" &&
-        method != "start_mining" && method != "submit_signed_transaction" &&
+        method != "start_mining" && method != "start_continuous_mining" &&
+        method != "stop_mining" && method != "submit_signed_transaction" &&
         method != "shutdown") {
         return error_response(id, "unknown_method", "Unknown RPC method.");
     }
@@ -1959,6 +2105,34 @@ nlohmann::json handle_request(
             {"id", id},
             {"ok", true},
             {"result", {{"preparing", defer_work}, {"started", !defer_work}}},
+        };
+    }
+    if (method == "start_continuous_mining") {
+        if (runtime.config().scenario) {
+            return error_response(id, "unknown_method", "Unknown control method.");
+        }
+        std::string error;
+        if (!runtime.start_continuous_mining(error)) {
+            return error_response(id, "mining_rejected", error);
+        }
+        return {
+            {"id", id},
+            {"ok", true},
+            {"result", {{"continuous", true}}},
+        };
+    }
+    if (method == "stop_mining") {
+        if (runtime.config().scenario) {
+            return error_response(id, "unknown_method", "Unknown control method.");
+        }
+        std::string error;
+        if (!runtime.stop_mining(error)) {
+            return error_response(id, "mining_rejected", error);
+        }
+        return {
+            {"id", id},
+            {"ok", true},
+            {"result", {{"stopped", true}}},
         };
     }
     if (method == "begin_mining") {
@@ -2139,6 +2313,10 @@ int run_runtime_node(
             ready_details["p2p_port"] = runtime.status(false)["p2p"]["port"];
         }
         events.emit("ready", std::move(ready_details));
+        if (!runtime.start_configured_mining(error_output)) {
+            runtime.stop_network();
+            return 1;
+        }
 
         bool stopping = false;
         while (!stopping) {

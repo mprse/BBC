@@ -68,7 +68,21 @@ submitted a competing solution before processing that relay, the full node
 returns reason code 1 and the same cancellation outcome. Blocks are never
 merged.
 
-## 4. Scenarios
+## 4. Persistent mining policy
+
+Persistent application mining and scenario mining share the same templates,
+validation, messages, and cancellable worker. `bbc rpc start-mining` performs
+one cycle. Continuous mode is enabled explicitly by
+`bbc rpc start-continuous-mining` or `miner.auto_start`; it is disabled by
+`bbc rpc stop-mining`.
+
+In continuous mode, an accepted block causes the miner to build or request a
+template for the next active-chain height. A block accepted from another miner
+cancels current work with a stale-parent outcome before the next template is
+started. A miner without a handshaken full-node source waits and retries without
+changing chain state. Empty mempools produce valid reward-only blocks.
+
+## 5. Scenarios
 
 `mining-race.json` is shared by both profiles. With `--regtest` it is an
 automated test using real low-difficulty PoW; without that option it uses the

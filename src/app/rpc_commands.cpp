@@ -159,6 +159,10 @@ int execute_rpc(
         method = std::string{command};
     } else if (command == "start-mining") {
         method = "start_mining";
+    } else if (command == "start-continuous-mining") {
+        method = "start_continuous_mining";
+    } else if (command == "stop-mining") {
+        method = "stop_mining";
     } else if (command == "stop") {
         method = "shutdown";
     } else if (submit) {
@@ -210,6 +214,10 @@ int execute_rpc(
         output << "Node shutdown requested.\n";
     } else if (command == "start-mining") {
         output << "Mining start requested.\n";
+    } else if (command == "start-continuous-mining") {
+        output << "Continuous mining start requested.\n";
+    } else if (command == "stop-mining") {
+        output << "Mining stop requested.\n";
     } else if (command == "ping") {
         if (!result->is_object() || !result->contains("nonce") ||
             !(*result)["nonce"].is_number_unsigned()) {
@@ -240,6 +248,8 @@ void print_rpc_help(std::ostream& output) {
            << "  bbc rpc dump --config <path>\n"
            << "  bbc rpc ping --config <path>\n"
            << "  bbc rpc start-mining --config <path>\n"
+           << "  bbc rpc start-continuous-mining --config <path>\n"
+           << "  bbc rpc stop-mining --config <path>\n"
            << "  bbc rpc submit --config <path> --transaction <path>\n"
            << "  bbc rpc stop --config <path>\n";
 }
@@ -259,6 +269,8 @@ int run_rpc_command(
         std::string_view{"dump"},
         std::string_view{"ping"},
         std::string_view{"start-mining"},
+        std::string_view{"start-continuous-mining"},
+        std::string_view{"stop-mining"},
         std::string_view{"submit"},
         std::string_view{"stop"},
     };

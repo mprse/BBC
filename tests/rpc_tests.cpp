@@ -462,6 +462,92 @@ TEST_CASE("persistent node RPC mines and accepts a signed transaction", "[rpc][n
     CHECK(node.output().find(token.value()) == std::string::npos);
 }
 
+TEST_CASE("persistent miner can run continuously and stop cleanly", "[rpc][node][mining]") {
+    TemporaryRpcDirectory directory;
+    const std::filesystem::path config_path = directory.path() / "bbc.json";
+    const std::vector<std::uint16_t> ports = available_loopback_ports(2);
+    const bbc::wallet::Wallet miner_wallet = bbc::wallet::Wallet::create();
+    const nlohmann::json config{
+        {"schema_version", 1},
+        {"name", "continuous-miner"},
+        {"network", "regtest"},
+        {"roles", {"wallet", "full_node", "miner"}},
+        {"wallet", {{"file", "wallet.dat"}}},
+        {"data_directory", "data"},
+        {"full_node", {
+            {"scope", "loopback"},
+            {"listen", {{"host", "127.0.0.1"}, {"port", ports[0]}}},
+            {"peers", nlohmann::json::array()},
+        }},
+        {"miner", {
+            {"reward_address", std::string{miner_wallet.address().value()}},
+            {"auto_start", true},
+        }},
+        {"rpc", {
+            {"listen", {{"host", "127.0.0.1"}, {"port", ports[1]}}},
+            {"token_file", "rpc.token"},
+        }},
+    };
+    {
+        std::ofstream output(config_path, std::ios::binary | std::ios::trunc);
+        output << config.dump(2) << '\n';
+    }
+
+    RunningApplicationNode node{config_path};
+    REQUIRE(wait_for_rpc(config_path));
+    REQUIRE(wait_for_height(config_path, 2));
+
+    const std::string config_file = config_path.string();
+    std::ostringstream stop_mining_output;
+    std::ostringstream stop_mining_error;
+    REQUIRE(run_cli(
+        {"rpc", "stop-mining", "--config", config_file},
+        stop_mining_output,
+        stop_mining_error
+    ) == 0);
+    CHECK(stop_mining_output.str() == "Mining stop requested.\n");
+    CHECK(stop_mining_error.str().empty());
+
+    const std::optional<nlohmann::json> stopped = rpc_json(config_path, "status");
+    REQUIRE(stopped.has_value());
+    CHECK((*stopped)["mining"]["auto_start"]);
+    CHECK_FALSE((*stopped)["mining"]["continuous"]);
+    CHECK_FALSE((*stopped)["mining"]["active"]);
+    CHECK((*stopped)["mining"]["state"] == "stopped");
+    const std::uint64_t stopped_height =
+        (*stopped)["chain"]["height"].get<std::uint64_t>();
+    std::this_thread::sleep_for(std::chrono::milliseconds{100});
+    const std::optional<nlohmann::json> still_stopped =
+        rpc_json(config_path, "status");
+    REQUIRE(still_stopped.has_value());
+    CHECK((*still_stopped)["chain"]["height"] == stopped_height);
+
+    std::ostringstream restart_output;
+    std::ostringstream restart_error;
+    REQUIRE(run_cli(
+        {"rpc", "start-continuous-mining", "--config", config_file},
+        restart_output,
+        restart_error
+    ) == 0);
+    CHECK(restart_output.str() == "Continuous mining start requested.\n");
+    CHECK(restart_error.str().empty());
+    REQUIRE(wait_for_height(config_path, stopped_height + 1));
+
+    REQUIRE(run_cli(
+        {"rpc", "stop-mining", "--config", config_file},
+        stop_mining_output,
+        stop_mining_error
+    ) == 0);
+    REQUIRE(request_stop(config_path));
+    REQUIRE(wait_for_exit(node));
+    CHECK(node.result() == 0);
+    CHECK(node.error_output().empty());
+    CHECK(node.output().find("\"event\":\"continuous_mining_started\"") !=
+          std::string::npos);
+    CHECK(node.output().find("\"event\":\"mining_stopped\"") !=
+          std::string::npos);
+}
+
 TEST_CASE("two persistent nodes confirm payment and recover after restart", "[rpc][node][network]") {
     TemporaryRpcDirectory directory;
     const std::filesystem::path node_a_config = directory.path() / "node-a.json";

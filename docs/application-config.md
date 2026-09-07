@@ -42,7 +42,8 @@ implemented. The scenario runner retains its independent
     ]
   },
   "miner": {
-    "reward_address": "BBC_4400000000000000000000000000000000000000000000000000000000000000"
+    "reward_address": "BBC_4400000000000000000000000000000000000000000000000000000000000000",
+    "auto_start": false
   },
   "rpc": {
     "listen": {
@@ -134,14 +135,17 @@ listener must name one exact address assigned to the local computer. See
 ```json
 {
   "reward_address": "BBC_4400000000000000000000000000000000000000000000000000000000000000",
-  "source": {"host": "127.0.0.1", "port": 7333}
+  "source": {"host": "127.0.0.1", "port": 7333},
+  "auto_start": false
 }
 ```
 
 `reward_address` is required and must be a canonical BBC address for the
 selected network's current address format. It is public and does not unlock the
 wallet. `source` is required for a mining-only installation and forbidden when
-the same process has the `full_node` role.
+the same process has the `full_node` role. `auto_start` is an optional Boolean
+that defaults to `false`. When it is `true`, the persistent process begins
+continuous mining after its P2P and RPC listeners are ready.
 
 ## Local RPC settings
 
@@ -200,8 +204,10 @@ has no background service.
 
 A combined `full_node` and `miner` uses its local validated chain and mempool to
 create a candidate. A mining-only process requests work from its configured
-`miner.source`. Mining starts only after `bbc rpc start-mining`; it is not
-silently enabled on process startup.
+`miner.source`. `bbc rpc start-mining` starts one block attempt.
+`bbc rpc start-continuous-mining` keeps requesting or building new work after
+each result, and `bbc rpc stop-mining` cancels current work. The same continuous
+mode starts automatically when `miner.auto_start` is `true`.
 
 Use another terminal for `bbc rpc ...` commands. See [`rpc.md`](rpc.md) for the
 complete command and wire interfaces.

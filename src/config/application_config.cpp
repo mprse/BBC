@@ -359,7 +359,10 @@ ApplicationConfigResult load_application_config(
     std::optional<MinerSettings> miner;
     if (miner_role) {
         if (!document.contains("miner") ||
-            !contains_only(document["miner"], {"reward_address", "source"}) ||
+            !contains_only(
+                document["miner"],
+                {"reward_address", "source", "auto_start"}
+            ) ||
             !document["miner"].contains("reward_address") ||
             !document["miner"]["reward_address"].is_string()) {
             return ApplicationConfigResult{ApplicationConfigError::invalid_miner};
@@ -381,7 +384,14 @@ ApplicationConfigResult load_application_config(
             (!full_node_role && !source.has_value())) {
             return ApplicationConfigResult{ApplicationConfigError::invalid_miner};
         }
-        miner = MinerSettings{*reward_address, source};
+        bool auto_start = false;
+        if (document["miner"].contains("auto_start")) {
+            if (!document["miner"]["auto_start"].is_boolean()) {
+                return ApplicationConfigResult{ApplicationConfigError::invalid_miner};
+            }
+            auto_start = document["miner"]["auto_start"].get<bool>();
+        }
+        miner = MinerSettings{*reward_address, source, auto_start};
     } else if (document.contains("miner")) {
         return ApplicationConfigResult{ApplicationConfigError::invalid_miner};
     }

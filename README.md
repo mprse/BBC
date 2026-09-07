@@ -66,7 +66,9 @@ BBC currently provides:
   detached-transaction restoration;
 - a Python scenario runner for observable multi-process tests on one computer;
 - strict persistent application configuration with a long-running node runtime
-  and an authenticated loopback RPC client.
+  and an authenticated loopback RPC client;
+- optional continuous mining with explicit automatic startup and local RPC
+  start/stop controls.
 
 Persistent application P2P supports explicit loopback, private-LAN, and
 Internet scopes with numeric unicast IPv4 endpoints. Application RPC and
@@ -95,6 +97,8 @@ Inspect and stop the process from another terminal:
 
 ```console
 .\build\windows-msvc-debug\bbc.exe rpc status --config examples\application-config.json
+.\build\windows-msvc-debug\bbc.exe rpc start-continuous-mining --config examples\application-config.json
+.\build\windows-msvc-debug\bbc.exe rpc stop-mining --config examples\application-config.json
 .\build\windows-msvc-debug\bbc.exe rpc stop --config examples\application-config.json
 ```
 

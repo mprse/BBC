@@ -97,7 +97,9 @@ int show_config(
         } else {
             output << "local full node";
         }
-        output << '\n';
+        output << '\n'
+               << "Mining auto-start: "
+               << (loaded->miner->auto_start ? "yes" : "no") << '\n';
     }
     if (loaded->rpc.has_value()) {
         output << "RPC listen: " << endpoint_text(loaded->rpc->listen) << '\n'

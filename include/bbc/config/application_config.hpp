@@ -45,6 +45,7 @@ struct FullNodeSettings {
 struct MinerSettings {
     wallet::Address reward_address;
     std::optional<NetworkEndpoint> source;
+    bool auto_start = false;
 };
 
 struct RpcSettings {
