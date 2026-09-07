@@ -41,6 +41,7 @@ compromise.
 - Users operate the background node and short-lived CLI in separate terminals.
 - P2P remains loopback-only at runtime until LAN and public-node hardening are
   designed and tested. ADR 0018 subsequently permits an explicit private-LAN
-  boundary while public-node operation remains unsupported.
+  boundary, and ADR 0019 adds opt-in static public IPv4 peers while retaining
+  the loopback RPC boundary.
 - Continuous mining, automatic configuration creation, and a combined
   create-sign-submit command remain separate product decisions.

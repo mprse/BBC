@@ -29,6 +29,7 @@ implemented. The scenario runner retains its independent
   },
   "data_directory": "data",
   "full_node": {
+    "scope": "lan",
     "listen": {
       "host": "192.168.1.10",
       "port": 7333
@@ -98,12 +99,19 @@ the running process.
 
 ```json
 {
+  "scope": "lan",
   "listen": {"host": "192.168.1.10", "port": 7333},
   "peers": [
     {"host": "192.168.1.20", "port": 7333}
   ]
 }
 ```
+
+`scope` is optional and accepts `loopback`, `lan`, or `internet`. An omitted
+scope defaults to `lan`. `loopback` accepts only `127.0.0.0/8`; `lan` accepts
+loopback and the RFC 1918 private ranges; `internet` accepts numeric unicast
+IPv4 including public addresses. A public endpoint is rejected unless
+`internet` is selected explicitly.
 
 `listen` is required and identifies the inbound P2P TCP endpoint.
 `peers` is optional and contains at most 64 unique initial peer endpoints. Ports
@@ -113,12 +121,13 @@ ports are rejected. The listener itself cannot also appear as an initial peer.
 
 Version 1 parsing accepts syntactically valid DNS names and IPv4 endpoints, but
 the current persistent runtime starts only when its P2P listener, initial peers,
-and mining source use numeric IPv4 loopback or private RFC 1918 addresses. The
+and mining source use numeric IPv4 addresses allowed by the selected scope. The
 private ranges are `10.0.0.0/8`, `172.16.0.0/12`, and `192.168.0.0/16`.
-Wildcard `0.0.0.0`, public addresses, DNS names, and IPv6 are rejected before
-the node creates its RPC token or persistent state. The listener must name one
-exact address assigned to the local computer. See
-[`lan-operation.md`](lan-operation.md) for configuration and firewall guidance.
+Wildcard `0.0.0.0`, multicast, limited broadcast, DNS names, and IPv6 are
+rejected before the node creates its RPC token or persistent state. The
+listener must name one exact address assigned to the local computer. See
+[`lan-operation.md`](lan-operation.md) for private-network configuration and
+[`internet-p2p.md`](internet-p2p.md) for the explicit public boundary.
 
 ## Miner settings
 
@@ -203,5 +212,5 @@ complete command and wire interfaces.
 `include/bbc/config/application_config.hpp` parses and validates an untrusted
 file. It returns `ApplicationConfigResult`, containing either a complete typed
 configuration value or an `ApplicationConfigError`. Callers use the
-typed role, endpoint, full-node, miner, and RPC settings rather than reading
-JSON independently.
+typed role, P2P scope, endpoint, full-node, miner, and RPC settings rather than
+reading JSON independently.

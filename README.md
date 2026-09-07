@@ -68,10 +68,10 @@ BBC currently provides:
 - strict persistent application configuration with a long-running node runtime
   and an authenticated loopback RPC client.
 
-Persistent application P2P supports numeric IPv4 loopback and private RFC 1918
-LAN addresses. Application RPC and scenario control remain restricted to IPv4
-loopback. Public-Internet listening, DNS peer resolution, and IPv6 are not
-implemented yet.
+Persistent application P2P supports explicit loopback, private-LAN, and
+Internet scopes with numeric unicast IPv4 endpoints. Application RPC and
+scenario control remain restricted to IPv4 loopback. DNS peer resolution,
+automatic peer discovery, IPv6, and production deployment are not implemented.
 
 ## Application configuration
 
@@ -108,6 +108,8 @@ catch-up synchronization, and restart is available in
 [persistent-network-test.md](docs/persistent-network-test.md).
 For two physical Windows computers on one trusted local network, follow
 [lan-operation.md](docs/lan-operation.md).
+The static public-peer model for an EC2 seed/full node and clients behind NAT is
+described in [internet-p2p.md](docs/internet-p2p.md).
 
 ## Wallet workflow
 

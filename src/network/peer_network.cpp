@@ -51,16 +51,32 @@ bool address_allowed(
         return false;
     }
     const asio::ip::address_v4 ipv4 = address.to_v4();
+    const auto bytes = ipv4.to_bytes();
+    if (ipv4.is_unspecified() || ipv4.is_multicast() ||
+        std::ranges::all_of(bytes, [](const crypto::Byte byte) {
+            return byte == 0xFF;
+        })) {
+        return false;
+    }
     if (ipv4.is_loopback()) {
         return true;
     }
-    return scope == PeerAddressScope::private_network && is_rfc1918(ipv4);
+    if (scope == PeerAddressScope::private_network) {
+        return is_rfc1918(ipv4);
+    }
+    return scope == PeerAddressScope::public_network;
 }
 
 std::string address_scope_error(const PeerAddressScope scope) {
-    return scope == PeerAddressScope::loopback
-        ? "P2P endpoint must use a nonzero IPv4 loopback address and port."
-        : "P2P endpoint must use a nonzero IPv4 loopback or RFC 1918 address and port.";
+    switch (scope) {
+        case PeerAddressScope::loopback:
+            return "P2P endpoint must use a nonzero IPv4 loopback address and port.";
+        case PeerAddressScope::private_network:
+            return "P2P endpoint must use a nonzero IPv4 loopback or RFC 1918 address and port.";
+        case PeerAddressScope::public_network:
+            return "P2P endpoint must use a nonzero unicast IPv4 address and port.";
+    }
+    return "P2P endpoint uses an unsupported address scope.";
 }
 
 }  // namespace
@@ -979,6 +995,18 @@ std::vector<PeerStatus> PeerNetwork::peers() const {
 
 std::string_view peer_direction_name(const PeerDirection direction) noexcept {
     return direction == PeerDirection::inbound ? "inbound" : "outbound";
+}
+
+std::string_view peer_address_scope_name(const PeerAddressScope scope) noexcept {
+    switch (scope) {
+        case PeerAddressScope::loopback:
+            return "loopback";
+        case PeerAddressScope::private_network:
+            return "lan";
+        case PeerAddressScope::public_network:
+            return "internet";
+    }
+    return "unknown";
 }
 
 }  // namespace bbc::network

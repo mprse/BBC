@@ -1,25 +1,30 @@
 {
   "schema_version": 1,
-  "name": "home-node",
+  "name": "home-full-node",
   "network": "development",
   "roles": ["wallet", "full_node"],
   "wallet": {
-    "file": "../wallet.dat"
+    "file": "../home.wallet"
   },
   "data_directory": "../node-home",
   "full_node": {
-    "scope": "loopback",
+    "scope": "internet",
     "listen": {
-      "host": "127.0.0.1",
+      "host": "192.168.1.10",
       "port": 7333
     },
-    "peers": []
+    "peers": [
+      {
+        "host": "198.51.100.10",
+        "port": 7333
+      }
+    ]
   },
   "rpc": {
     "listen": {
       "host": "127.0.0.1",
       "port": 7334
     },
-    "token_file": "../rpc.token"
+    "token_file": "../home-rpc.token"
   }
 }

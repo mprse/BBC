@@ -54,9 +54,10 @@ std::string hybrid_config() {
         "wallet": {"file": "wallet.dat"},
         "data_directory": "data",
         "full_node": {
+            "scope": "internet",
             "listen": {"host": "127.0.0.1", "port": 7333},
             "peers": [
-                {"host": "seed.example.org", "port": 7333},
+                {"host": "203.0.113.10", "port": 7333},
                 {"host": "192.168.1.20", "port": 8333}
             ]
         },
@@ -89,16 +90,36 @@ TEST_CASE("application configuration loads all persistent roles", "[config]") {
     CHECK(config.wallet_file == file.path().parent_path() / "wallet.dat");
     CHECK(config.data_directory == file.path().parent_path() / "data");
     REQUIRE(config.full_node.has_value());
+    CHECK(config.full_node->scope == bbc::config::P2pScope::internet);
     CHECK(config.full_node->listen.host == "127.0.0.1");
     CHECK(config.full_node->listen.port == 7333);
     REQUIRE(config.full_node->peers.size() == 2);
-    CHECK(config.full_node->peers.front().host == "seed.example.org");
+    CHECK(config.full_node->peers.front().host == "203.0.113.10");
     REQUIRE(config.miner.has_value());
     CHECK(config.miner->reward_address.value() == reward_address);
     CHECK_FALSE(config.miner->source.has_value());
     REQUIRE(config.rpc.has_value());
     CHECK(config.rpc->listen.port == 7334);
     CHECK(config.rpc->token_file == file.path().parent_path() / "rpc.token");
+}
+
+TEST_CASE("application configuration defaults P2P scope to LAN", "[config]") {
+    std::string encoded = hybrid_config();
+    const std::string scope = "\"scope\": \"internet\",";
+    const std::size_t position = encoded.find(scope);
+    REQUIRE(position != std::string::npos);
+    encoded.erase(position, scope.size());
+    TemporaryApplicationConfig file{
+        "bbc-application-config-default-scope.json",
+        encoded,
+    };
+
+    const bbc::config::ApplicationConfigResult loaded =
+        bbc::config::load_application_config(file.path());
+
+    REQUIRE(loaded.has_value());
+    REQUIRE(loaded.value().full_node.has_value());
+    CHECK(loaded.value().full_node->scope == bbc::config::P2pScope::lan);
 }
 
 TEST_CASE("wallet-only application configuration needs no service sections", "[config]") {
@@ -287,6 +308,21 @@ TEST_CASE("application configuration rejects unsafe or ambiguous input", "[confi
         CHECK(loaded.error() == bbc::config::ApplicationConfigError::invalid_full_node);
     }
 
+    SECTION("unknown P2P scope is rejected") {
+        std::string encoded = hybrid_config();
+        const std::string original = "\"scope\": \"internet\"";
+        const std::size_t position = encoded.find(original);
+        REQUIRE(position != std::string::npos);
+        encoded.replace(position, original.size(), "\"scope\": \"global\"");
+        TemporaryApplicationConfig file{
+            "bbc-application-config-invalid-scope.json",
+            encoded,
+        };
+        const auto loaded = bbc::config::load_application_config(file.path());
+        CHECK_FALSE(loaded.has_value());
+        CHECK(loaded.error() == bbc::config::ApplicationConfigError::invalid_full_node);
+    }
+
     SECTION("malformed numeric IP addresses are rejected") {
         std::string encoded = hybrid_config();
         const std::string original = "192.168.1.20";
@@ -327,6 +363,8 @@ TEST_CASE("configuration CLI validates and shows normalized settings", "[config]
     std::ostringstream show_error;
     CHECK(bbc::app::run(show_arguments, show_output, show_error) == 0);
     CHECK(show_output.str().find("Roles: wallet, full_node, miner") !=
+          std::string::npos);
+    CHECK(show_output.str().find("P2P scope: internet") !=
           std::string::npos);
     CHECK(show_output.str().find("P2P listen: 127.0.0.1:7333") !=
           std::string::npos);

@@ -7,9 +7,9 @@ systems. The compiler changes by platform, but source code, dependencies,
 warnings, tests, and directory layout remain consistent.
 
 Windows is the primary development environment today. Linux with GCC is the
-target environment for a future public full node on a VPS or AWS EC2. The Linux
-build preset exists, but public P2P deployment is not yet supported because the
-current listener intentionally accepts loopback connections only.
+target environment for a public full node on a VPS or AWS EC2. The Linux debug
+build preset and explicit Internet P2P scope exist; release packaging and
+managed service operation are still being prepared.
 
 ## Common tools
 
@@ -133,13 +133,16 @@ deployment format.
 On EC2, also plan for:
 
 - persistent storage for the node data directory;
-- a fixed public address or stable DNS name;
-- an inbound security-group rule for the future BBC P2P TCP port;
+- a fixed public Elastic IP for the current numeric IPv4 peer configuration;
+- an inbound security-group rule for the BBC P2P TCP port;
 - SSH access restricted to the administrator's source address;
 - a service manager such as `systemd` to restart BBC after a reboot;
 - monitoring and backups of authoritative `blocks.dat` data.
 
-Do not expose the loopback test-control endpoint to a LAN or the Internet.
+Do not expose the loopback application RPC or test-control endpoint to a LAN or
+the Internet. Static Internet P2P configuration is documented in
+[`internet-p2p.md`](internet-p2p.md), but release packaging and service
+operation remain future work.
 
 ## Private LAN testing
 
@@ -147,7 +150,8 @@ The Windows build can bind application P2P to one private RFC 1918 address for
 testing between computers on the same trusted network. Keep RPC on
 `127.0.0.1`, open only the selected P2P TCP port on the Windows Private firewall
 profile, and follow [`lan-operation.md`](lan-operation.md). Public Internet and
-EC2 P2P exposure remain separate deployment work.
+EC2 P2P exposure use the explicit `internet` address scope described in
+[`internet-p2p.md`](internet-p2p.md).
 
 ## macOS
 

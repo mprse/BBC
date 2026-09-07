@@ -323,7 +323,7 @@ TEST_CASE("persistent node rejects unsafe P2P before creating secrets", "[rpc][n
         error_output
     ) == 1);
     CHECK(output.str().empty());
-    CHECK(error_output.str().find("RFC 1918 LAN address") !=
+    CHECK(error_output.str().find("outside the configured full-node scope") !=
           std::string::npos);
     CHECK_FALSE(std::filesystem::exists(directory.path() / "rpc.token"));
     CHECK_FALSE(std::filesystem::exists(directory.path() / "data"));
@@ -349,6 +349,7 @@ TEST_CASE("persistent node RPC mines and accepts a signed transaction", "[rpc][n
         {"wallet", {{"file", "wallet.dat"}}},
         {"data_directory", "data"},
         {"full_node", {
+            {"scope", "internet"},
             {"listen", {{"host", "127.0.0.1"}, {"port", p2p_port}}},
             {"peers", nlohmann::json::array()},
         }},
@@ -432,6 +433,7 @@ TEST_CASE("persistent node RPC mines and accepts a signed transaction", "[rpc][n
         status_error
     ) == 0);
     const nlohmann::json status = nlohmann::json::parse(status_output.str());
+    CHECK(status["p2p"]["scope"] == "internet");
     CHECK(status["chain"]["height"] == 1);
     CHECK(status["chain"]["mempool_size"] == 1);
     CHECK(status["mining"]["state"] == "accepted");
@@ -477,6 +479,7 @@ TEST_CASE("two persistent nodes confirm payment and recover after restart", "[rp
         {"wallet", {{"file", "miner.wallet"}}},
         {"data_directory", "node-a-data"},
         {"full_node", {
+            {"scope", "loopback"},
             {"listen", {{"host", "127.0.0.1"}, {"port", ports[0]}}},
             {"peers", {
                 {{"host", "127.0.0.2"}, {"port", ports[2]}},
@@ -498,6 +501,7 @@ TEST_CASE("two persistent nodes confirm payment and recover after restart", "[rp
         {"wallet", {{"file", "recipient.wallet"}}},
         {"data_directory", "node-b-data"},
         {"full_node", {
+            {"scope", "loopback"},
             {"listen", {{"host", "127.0.0.2"}, {"port", ports[2]}}},
             {"peers", nlohmann::json::array()},
         }},
@@ -526,6 +530,10 @@ TEST_CASE("two persistent nodes confirm payment and recover after restart", "[rp
         {
             RunningApplicationNode running_b{node_b_config};
             REQUIRE(wait_for_rpc(node_b_config));
+            const std::optional<nlohmann::json> initial_status_a =
+                rpc_json(node_a_config, "status");
+            REQUIRE(initial_status_a.has_value());
+            CHECK((*initial_status_a)["p2p"]["scope"] == "loopback");
             REQUIRE(wait_for_status(node_a_config, [](const nlohmann::json& status) {
                 return status["p2p"]["handshake_complete_count"] >= 1;
             }));

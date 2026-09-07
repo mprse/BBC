@@ -21,6 +21,8 @@ when a topic crosses subsystem boundaries.
   two-node flow through normal configuration and RPC commands.
 - [`lan-operation.md`](lan-operation.md) explains safe P2P testing between two
   Windows computers on one private network.
+- [`internet-p2p.md`](internet-p2p.md) defines explicit public IPv4 peers, the
+  first EC2 seed/full-node topology, and current deployment limits.
 
 ## Data and consensus
 

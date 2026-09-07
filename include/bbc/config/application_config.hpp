@@ -23,6 +23,12 @@ enum class ApplicationRole {
     miner,
 };
 
+enum class P2pScope {
+    loopback,
+    lan,
+    internet,
+};
+
 struct NetworkEndpoint {
     std::string host;
     std::uint16_t port;
@@ -33,6 +39,7 @@ struct NetworkEndpoint {
 struct FullNodeSettings {
     NetworkEndpoint listen;
     std::vector<NetworkEndpoint> peers;
+    P2pScope scope = P2pScope::lan;
 };
 
 struct MinerSettings {
@@ -98,6 +105,8 @@ private:
 [[nodiscard]] std::string_view application_role_name(
     ApplicationRole role
 ) noexcept;
+
+[[nodiscard]] std::string_view p2p_scope_name(P2pScope scope) noexcept;
 
 [[nodiscard]] std::string_view application_config_error_message(
     ApplicationConfigError error

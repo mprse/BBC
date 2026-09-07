@@ -50,6 +50,7 @@ struct RuntimeConfig {
     core::NetworkProfile network_profile = core::NetworkProfile::development;
     std::string p2p_host = "127.0.0.1";
     std::uint16_t p2p_port = 0;
+    network::PeerAddressScope p2p_scope = network::PeerAddressScope::loopback;
     std::string control_host = "127.0.0.1";
     std::uint16_t control_port = 0;
     std::string control_token;
@@ -62,6 +63,18 @@ struct RuntimeConfig {
         return std::ranges::find(roles, role) != roles.end();
     }
 };
+
+network::PeerAddressScope runtime_p2p_scope(const config::P2pScope scope) {
+    switch (scope) {
+        case config::P2pScope::loopback:
+            return network::PeerAddressScope::loopback;
+        case config::P2pScope::lan:
+            return network::PeerAddressScope::private_network;
+        case config::P2pScope::internet:
+            return network::PeerAddressScope::public_network;
+    }
+    return network::PeerAddressScope::loopback;
+}
 
 std::vector<ActorRole> runtime_roles(
     const std::vector<config::ApplicationRole>& roles
@@ -92,6 +105,7 @@ RuntimeConfig runtime_config(ScenarioActorConfig config) {
         config.network_profile,
         "127.0.0.1",
         config.p2p_port,
+        network::PeerAddressScope::loopback,
         "127.0.0.1",
         config.control_port,
         std::move(config.control_token),
@@ -109,10 +123,12 @@ RuntimeConfig runtime_config(
     const bool full_node = application.has_role(config::ApplicationRole::full_node);
     std::string p2p_host = "127.0.0.1";
     std::uint16_t p2p_port = 0;
+    network::PeerAddressScope p2p_scope = network::PeerAddressScope::public_network;
     std::vector<config::NetworkEndpoint> peers;
     if (application.full_node.has_value()) {
         p2p_host = application.full_node->listen.host;
         p2p_port = application.full_node->listen.port;
+        p2p_scope = runtime_p2p_scope(application.full_node->scope);
         peers = std::move(application.full_node->peers);
     } else if (application.miner.has_value() && application.miner->source.has_value()) {
         peers.push_back(*application.miner->source);
@@ -125,6 +141,7 @@ RuntimeConfig runtime_config(
         application.network_profile,
         std::move(p2p_host),
         p2p_port,
+        p2p_scope,
         application.rpc->listen.host,
         application.rpc->listen.port,
         std::move(token),
@@ -265,9 +282,7 @@ public:
                 tip_id,
                 genesis.id(),
                 config_.p2p_host,
-                config_.scenario
-                    ? network::PeerAddressScope::loopback
-                    : network::PeerAddressScope::private_network,
+                config_.p2p_scope,
             },
             [this, &events](const network::PeerEvent& event) {
                 events.emit(
@@ -725,6 +740,7 @@ public:
                 peers.push_back(std::move(encoded));
             }
             result["p2p"] = {
+                {"scope", network::peer_address_scope_name(config_.p2p_scope)},
                 {"host", config_.p2p_host},
                 {"port", network_->listen_port()},
                 {"peer_count", peers.size()},
@@ -2163,27 +2179,41 @@ int run_application_node(
         error_output << "Configuration has no local RPC settings.\n";
         return 1;
     }
-    const auto private_peer = [](const config::NetworkEndpoint& endpoint) {
+    const auto allowed_peer = [](
+        const config::NetworkEndpoint& endpoint,
+        const network::PeerAddressScope scope
+    ) {
         return network::peer_address_allowed(
             endpoint.host,
-            network::PeerAddressScope::private_network
+            scope
         );
     };
-    if (config.full_node.has_value() && !private_peer(config.full_node->listen)) {
-        error_output << "P2P listeners must use a numeric IPv4 loopback or "
-                        "RFC 1918 LAN address.\n";
-        return 1;
-    }
-    if (config.full_node.has_value() &&
-        !std::ranges::all_of(config.full_node->peers, private_peer)) {
-        error_output << "Initial peers must use numeric IPv4 loopback or "
-                        "RFC 1918 LAN addresses.\n";
-        return 1;
+    if (config.full_node.has_value()) {
+        const network::PeerAddressScope scope = runtime_p2p_scope(
+            config.full_node->scope
+        );
+        if (!allowed_peer(config.full_node->listen, scope)) {
+            error_output << "P2P listener is outside the configured "
+                            "full-node scope.\n";
+            return 1;
+        }
+        if (!std::ranges::all_of(
+                config.full_node->peers,
+                [scope, &allowed_peer](const config::NetworkEndpoint& endpoint) {
+                    return allowed_peer(endpoint, scope);
+                }
+            )) {
+            error_output << "An initial peer is outside the configured "
+                            "full-node scope.\n";
+            return 1;
+        }
     }
     if (config.miner.has_value() && config.miner->source.has_value() &&
-        !private_peer(*config.miner->source)) {
-        error_output << "Mining sources must use a numeric IPv4 loopback or "
-                        "RFC 1918 LAN address.\n";
+        !allowed_peer(
+            *config.miner->source,
+            network::PeerAddressScope::public_network
+        )) {
+        error_output << "Mining sources must use a numeric unicast IPv4 address.\n";
         return 1;
     }
     rpc::TokenResult token = rpc::load_or_create_token(config.rpc->token_file);

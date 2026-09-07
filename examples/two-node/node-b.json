@@ -8,6 +8,7 @@
   },
   "data_directory": "../../node-b",
   "full_node": {
+    "scope": "loopback",
     "listen": {
       "host": "127.0.0.1",
       "port": 7443

@@ -44,7 +44,8 @@ bbc rpc stop --config bbc.json
 
 - `health` checks that the authenticated command endpoint is ready.
 - `status` returns roles, software and network versions, chain tip, mempool,
-  peers, synchronization, and mining state as formatted JSON.
+  active P2P address scope, peers, synchronization, and mining state as
+  formatted JSON.
 - `dump` adds deterministic account and pending-transaction entries to status.
 - `ping` asks the P2P layer to send a `PING` to every handshaken peer.
 - `start-mining` starts one mining cycle. A combined full node and miner builds
@@ -83,7 +84,8 @@ application API.
 ## Current limits
 
 - RPC cannot bind outside exact IPv4 loopback.
-- P2P startup currently also requires numeric loopback endpoints.
+- P2P startup requires numeric IPv4 endpoints allowed by the configured P2P
+  scope; DNS names and IPv6 are not supported.
 - RPC is synchronous and intended for one local operator, not high request
   volume or untrusted public clients.
 - `start-mining` starts one block attempt; continuous mining policy is not yet

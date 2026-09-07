@@ -8,7 +8,8 @@ or remote peer from bypassing the rules that every full node must enforce.
 
 The project currently supports observable local experiments and persistent
 nodes on one computer or one private IPv4 LAN. Application P2P may use loopback
-or RFC 1918 addresses. Application RPC, scenario P2P, and test control remain
+or RFC 1918 addresses by default, and an explicit Internet scope permits static
+numeric public peers. Application RPC, scenario P2P, and test control remain
 restricted to IPv4 loopback.
 
 ## Main data flow

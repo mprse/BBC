@@ -80,7 +80,9 @@ int show_config(
            << "Data directory: " << loaded->data_directory.string() << '\n';
 
     if (loaded->full_node.has_value()) {
-        output << "P2P listen: " << endpoint_text(loaded->full_node->listen) << '\n'
+        output << "P2P scope: "
+               << config::p2p_scope_name(loaded->full_node->scope) << '\n'
+               << "P2P listen: " << endpoint_text(loaded->full_node->listen) << '\n'
                << "Initial peers: " << loaded->full_node->peers.size() << '\n';
         for (const config::NetworkEndpoint& peer : loaded->full_node->peers) {
             output << "Peer: " << endpoint_text(peer) << '\n';

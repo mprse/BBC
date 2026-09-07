@@ -21,6 +21,7 @@ enum class PeerDirection {
 enum class PeerAddressScope {
     loopback,
     private_network,
+    public_network,
 };
 
 struct PeerStatus {
@@ -107,6 +108,9 @@ private:
 };
 
 [[nodiscard]] std::string_view peer_direction_name(PeerDirection direction) noexcept;
+[[nodiscard]] std::string_view peer_address_scope_name(
+    PeerAddressScope scope
+) noexcept;
 [[nodiscard]] bool peer_address_allowed(
     std::string_view host,
     PeerAddressScope scope

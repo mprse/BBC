@@ -193,8 +193,12 @@ used by BBC's fork-choice rule.
 ## Networking and infrastructure
 
 **EC2 — Elastic Compute Cloud**
-Amazon Web Services virtual-machine service. An EC2 instance can eventually run
-a publicly reachable BBC full node.
+Amazon Web Services virtual-machine service. An EC2 instance can host a BBC full
+node, although release packaging and production operation remain unfinished.
+
+**Elastic IP**
+A stable public IPv4 address allocated to an AWS account and associated with an
+EC2 instance. AWS maps it to the instance's private network interface address.
 
 **Handshake**
 The initial exchange that verifies protocol-version overlap, chain identity,

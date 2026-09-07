@@ -173,8 +173,10 @@ reports the resolved endpoint in its structured `ready` event and control
 `status` response.
 
 Address exposure is application policy rather than part of the binary wire
-protocol. The current persistent runtime rejects wildcard, public, DNS, and IPv6
-P2P endpoints. Application RPC and scenario control remain loopback-only.
+protocol. A persistent configuration selects loopback, private-LAN, or Internet
+scope. Internet scope permits numeric public unicast IPv4 endpoints. The runtime
+always rejects wildcard, multicast, limited broadcast, DNS, and IPv6 P2P
+endpoints. Application RPC and scenario control remain loopback-only.
 
 Scenario peer names are resolved by the runner after all listeners are ready.
 The runner asks one actor to connect to another through an authenticated control

@@ -16,6 +16,10 @@ restriction avoids accidentally exposing the current educational node to the
 public Internet. It is an application safety policy and does not change the P2P
 wire protocol or consensus rules.
 
+Use `"scope": "lan"` in the `full_node` object. This is also the default when
+the field is omitted. Public numeric peers require the separate explicit
+`internet` scope described in [`internet-p2p.md`](internet-p2p.md).
+
 Application RPC remains bound to `127.0.0.1`. Commands such as `rpc status`,
 `rpc submit`, and `rpc stop` must be run locally on the same computer as their
 node. Never add an inbound firewall rule for the RPC port.
@@ -48,6 +52,7 @@ to its own LAN address:
 
 ```json
 "full_node": {
+  "scope": "lan",
   "listen": {"host": "192.168.1.20", "port": 7433},
   "peers": []
 },
@@ -67,6 +72,7 @@ Bind node A to its own LAN address and list node B as the initial peer:
 
 ```json
 "full_node": {
+  "scope": "lan",
   "listen": {"host": "192.168.1.10", "port": 7433},
   "peers": [
     {"host": "192.168.1.20", "port": 7433}
@@ -134,8 +140,8 @@ the router.
 
 ## Intentionally unsupported
 
-This LAN capability is not public-node deployment. The current runtime does not
-provide public peer addresses, DNS resolution, IPv6, TLS, NAT traversal, router
-port forwarding, peer discovery, connection bans, or an Internet deployment
-package. An EC2 node also needs a release build, service management, logging,
-resource controls, and a separately reviewed public-exposure policy.
+LAN scope is not public-node deployment. The separate `internet` scope supports
+static numeric public peers, but the current runtime does not provide DNS
+resolution, IPv6, TLS, NAT traversal, router port forwarding, peer discovery,
+connection bans, or an Internet deployment package. An EC2 node also needs a
+release build, service management, logging, and resource controls.

@@ -1,0 +1,28 @@
+{
+  "schema_version": 1,
+  "name": "ec2-seed-miner",
+  "network": "development",
+  "roles": ["wallet", "full_node", "miner"],
+  "wallet": {
+    "file": "../ec2.wallet"
+  },
+  "data_directory": "../node-ec2",
+  "full_node": {
+    "scope": "internet",
+    "listen": {
+      "host": "172.31.0.10",
+      "port": 7333
+    },
+    "peers": []
+  },
+  "miner": {
+    "reward_address": "BBC_4400000000000000000000000000000000000000000000000000000000000000"
+  },
+  "rpc": {
+    "listen": {
+      "host": "127.0.0.1",
+      "port": 7334
+    },
+    "token_file": "../ec2-rpc.token"
+  }
+}

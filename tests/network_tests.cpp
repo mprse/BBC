@@ -433,6 +433,22 @@ TEST_CASE("P2P address scopes separate scenarios from LAN nodes", "[network]") {
     CHECK_FALSE(bbc::network::peer_address_allowed("8.8.8.8", PeerAddressScope::private_network));
     CHECK_FALSE(bbc::network::peer_address_allowed("seed.example.org", PeerAddressScope::private_network));
     CHECK_FALSE(bbc::network::peer_address_allowed("::1", PeerAddressScope::private_network));
+
+    CHECK(bbc::network::peer_address_allowed("8.8.8.8", PeerAddressScope::public_network));
+    CHECK(bbc::network::peer_address_allowed("192.168.1.20", PeerAddressScope::public_network));
+    CHECK_FALSE(bbc::network::peer_address_allowed("0.0.0.0", PeerAddressScope::public_network));
+    CHECK_FALSE(bbc::network::peer_address_allowed("224.0.0.1", PeerAddressScope::public_network));
+    CHECK_FALSE(bbc::network::peer_address_allowed("255.255.255.255", PeerAddressScope::public_network));
+    CHECK_FALSE(bbc::network::peer_address_allowed("seed.example.org", PeerAddressScope::public_network));
+    CHECK_FALSE(bbc::network::peer_address_allowed("::1", PeerAddressScope::public_network));
+
+    bbc::network::PeerNetworkConfig internet_config = test_network_config();
+    internet_config.listen = false;
+    internet_config.address_scope = PeerAddressScope::public_network;
+    bbc::network::PeerNetwork internet_network{std::move(internet_config), {}};
+    std::string error;
+    CHECK(internet_network.connect("203.0.113.10", 7333, error));
+    CHECK_FALSE(internet_network.connect("0.0.0.0", 7333, error));
 }
 
 TEST_CASE("P2P listener binds its configured loopback address", "[network]") {

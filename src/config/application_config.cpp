@@ -153,6 +153,19 @@ std::optional<ApplicationRole> parse_role(const std::string_view value) {
     return std::nullopt;
 }
 
+std::optional<P2pScope> parse_p2p_scope(const std::string_view value) {
+    if (value == "loopback") {
+        return P2pScope::loopback;
+    }
+    if (value == "lan") {
+        return P2pScope::lan;
+    }
+    if (value == "internet") {
+        return P2pScope::internet;
+    }
+    return std::nullopt;
+}
+
 bool has_role(
     const std::vector<ApplicationRole>& roles,
     const ApplicationRole role
@@ -298,7 +311,7 @@ ApplicationConfigResult load_application_config(
     std::optional<FullNodeSettings> full_node;
     if (full_node_role) {
         if (!document.contains("full_node") ||
-            !contains_only(document["full_node"], {"listen", "peers"}) ||
+            !contains_only(document["full_node"], {"listen", "peers", "scope"}) ||
             !document["full_node"].contains("listen")) {
             return ApplicationConfigResult{ApplicationConfigError::invalid_full_node};
         }
@@ -324,7 +337,20 @@ ApplicationConfigResult load_application_config(
                 peers.push_back(*peer);
             }
         }
-        full_node = FullNodeSettings{*listen, std::move(peers)};
+        P2pScope scope = P2pScope::lan;
+        if (document["full_node"].contains("scope")) {
+            if (!document["full_node"]["scope"].is_string()) {
+                return ApplicationConfigResult{ApplicationConfigError::invalid_full_node};
+            }
+            const std::optional<P2pScope> parsed_scope = parse_p2p_scope(
+                document["full_node"]["scope"].get<std::string>()
+            );
+            if (!parsed_scope.has_value()) {
+                return ApplicationConfigResult{ApplicationConfigError::invalid_full_node};
+            }
+            scope = *parsed_scope;
+        }
+        full_node = FullNodeSettings{*listen, std::move(peers), scope};
     } else if (document.contains("full_node")) {
         return ApplicationConfigResult{ApplicationConfigError::invalid_full_node};
     }
@@ -440,6 +466,18 @@ std::string_view application_role_name(const ApplicationRole role) noexcept {
             return "full_node";
         case ApplicationRole::miner:
             return "miner";
+    }
+    return "unknown";
+}
+
+std::string_view p2p_scope_name(const P2pScope scope) noexcept {
+    switch (scope) {
+        case P2pScope::loopback:
+            return "loopback";
+        case P2pScope::lan:
+            return "lan";
+        case P2pScope::internet:
+            return "internet";
     }
     return "unknown";
 }

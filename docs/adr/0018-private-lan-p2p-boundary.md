@@ -39,4 +39,6 @@ controls and must not become a network service.
 - A host with multiple interfaces must name the intended private interface
   rather than binding all interfaces.
 - Public Internet and EC2 peer connectivity remain unsupported until their
-  separate security and deployment requirements are implemented.
+  separate security and deployment requirements are implemented. ADR 0019
+  subsequently defines an explicit static Internet scope while deployment
+  packaging remains unsupported.
