@@ -126,6 +126,8 @@ The repository is organized by responsibility:
 |-- docs/
 |   `-- adr/
 |-- include/bbc/
+|-- packaging/
+|   `-- systemd/
 |-- src/
 |   |-- app/
 |   |-- chain/

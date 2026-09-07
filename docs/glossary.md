@@ -194,7 +194,8 @@ used by BBC's fork-choice rule.
 
 **EC2 — Elastic Compute Cloud**
 Amazon Web Services virtual-machine service. An EC2 instance can host a BBC full
-node, although release packaging and production operation remain unfinished.
+node. BBC provides a Linux release package and service template, while instance
+creation, AWS networking, monitoring, and backups remain operator tasks.
 
 **Elastic IP**
 A stable public IPv4 address allocated to an AWS account and associated with an

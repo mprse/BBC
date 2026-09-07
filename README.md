@@ -19,6 +19,8 @@ Start with these documents:
   data flow, APIs, and trust boundaries;
 - [Toolchain and build guide](docs/toolchain.md) — Windows development and
   Linux/EC2 builds;
+- [EC2 deployment guide](docs/ec2-deployment.md) — Linux package installation,
+  service paths, systemd, and the remaining AWS boundary;
 - [Local network scenarios](docs/local-network-test-plan.md) — repeatable
   multi-process demonstrations.
 
@@ -120,6 +122,8 @@ For two physical Windows computers on one trusted local network, follow
 [lan-operation.md](docs/lan-operation.md).
 The static public-peer model for an EC2 seed/full node and clients behind NAT is
 described in [internet-p2p.md](docs/internet-p2p.md).
+The matching Linux service layout and installation commands are documented in
+[ec2-deployment.md](docs/ec2-deployment.md).
 
 ## Wallet workflow
 

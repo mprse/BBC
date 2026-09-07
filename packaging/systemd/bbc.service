@@ -1,0 +1,38 @@
+[Unit]
+Description=Bi-Bi-Coin educational full node and miner
+Documentation=file:/opt/bbc/share/doc/bbc/README.md
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=simple
+User=bbc
+Group=bbc
+WorkingDirectory=/var/lib/bbc
+ExecStartPre=/opt/bbc/bin/bbc config validate --file /etc/bbc/bbc.json
+ExecStart=/opt/bbc/bin/bbc node run --config /etc/bbc/bbc.json
+ExecStop=/opt/bbc/bin/bbc rpc stop --config /etc/bbc/bbc.json
+Restart=on-failure
+RestartSec=5s
+TimeoutStopSec=60s
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/bbc
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+LockPersonality=true
+MemoryDenyWriteExecute=true
+RestrictAddressFamilies=AF_INET AF_UNIX
+CapabilityBoundingSet=
+SystemCallArchitectures=native
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

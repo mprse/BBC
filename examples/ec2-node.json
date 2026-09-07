@@ -4,9 +4,9 @@
   "network": "development",
   "roles": ["wallet", "full_node", "miner"],
   "wallet": {
-    "file": "../ec2.wallet"
+    "file": "/var/lib/bbc/wallet.dat"
   },
-  "data_directory": "../node-ec2",
+  "data_directory": "/var/lib/bbc/node",
   "full_node": {
     "scope": "internet",
     "listen": {
@@ -24,6 +24,6 @@
       "host": "127.0.0.1",
       "port": 7334
     },
-    "token_file": "../ec2-rpc.token"
+    "token_file": "/var/lib/bbc/rpc.token"
   }
 }

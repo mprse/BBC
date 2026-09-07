@@ -11,8 +11,7 @@ This capability does not make BBC production cryptocurrency software. The
 current implementation has bounded frames, connection limits, handshake
 validation, and independent consensus validation, but it does not yet provide
 DNS resolution, automatic peer discovery, address gossip, connection bans,
-encrypted transport, NAT traversal, release packaging, or operational
-monitoring.
+encrypted transport, NAT traversal, or operational monitoring.
 
 Application RPC remains restricted to `127.0.0.1` in every P2P scope. Never
 publish its port or token.
@@ -101,10 +100,10 @@ connections are the planned mitigation.
 
 ## Remaining deployment work
 
-The executable can express and enforce static numeric IPv4 connectivity, and
-the CMake project can produce a Linux release archive. EC2 operation still
-requires:
+The executable can express and enforce static numeric IPv4 connectivity. The
+CMake project produces a Linux release archive with a systemd service template,
+and [`ec2-deployment.md`](ec2-deployment.md) defines its installation. EC2
+operation still requires:
 
-- a `systemd` service and graceful restart policy;
 - durable storage, logs, health checks, and backups;
 - a real multi-host connectivity and synchronization test.

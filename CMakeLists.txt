@@ -97,6 +97,10 @@ install(
     FILES examples/ec2-node.json
     DESTINATION "${CMAKE_INSTALL_DATADIR}/bbc/examples"
 )
+install(
+    FILES packaging/systemd/bbc.service
+    DESTINATION "${CMAKE_INSTALL_DATADIR}/bbc/systemd"
+)
 
 if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
     set(CPACK_GENERATOR "TGZ")

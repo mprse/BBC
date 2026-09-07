@@ -15,6 +15,8 @@ when a topic crosses subsystem boundaries.
   running local node without exposing wallet secrets.
 - [`toolchain.md`](toolchain.md) explains supported development tools and build
   procedures for Windows, Linux, and an eventual EC2 host.
+- [`ec2-deployment.md`](ec2-deployment.md) defines the packaged Linux layout,
+  systemd service, local administration, and handoff to AWS configuration.
 - [`local-network-test-plan.md`](local-network-test-plan.md) explains actor roles,
   scenario files, execution, assertions, and artifacts.
 - [`persistent-network-test.md`](persistent-network-test.md) provides a manual

@@ -7,9 +7,9 @@ systems. The compiler changes by platform, but source code, dependencies,
 warnings, tests, and directory layout remain consistent.
 
 Windows is the primary development environment today. Linux with GCC is the
-target environment for a public full node on a VPS or AWS EC2. The Linux debug
-build preset and explicit Internet P2P scope exist; release packaging and
-managed service operation are still being prepared.
+target environment for a public full node on a VPS or AWS EC2. Debug and release
+presets, explicit Internet P2P, Linux packaging, and a systemd service template
+are implemented.
 
 ## Common tools
 
@@ -145,9 +145,11 @@ python3 tools/build.py package
 The package command configures `linux-gcc-release`, builds with tests disabled,
 and runs CPack. It writes
 `build/linux-gcc-release/bbc-<version>-linux-<architecture>.tar.gz`. The archive
-contains `bin/bbc`, the EC2 configuration template, the license, and reference
-documentation. Build the archive on the same Linux architecture used by the
-target EC2 instance; a Windows binary is not a Linux deployment artifact.
+contains `bin/bbc`, the EC2 configuration and systemd templates, the license,
+and reference documentation. Build the archive on the same Linux architecture
+used by the target EC2 instance; a Windows binary is not a Linux deployment
+artifact. Installation instructions are in
+[`ec2-deployment.md`](ec2-deployment.md).
 
 On EC2, also plan for:
 
@@ -160,8 +162,8 @@ On EC2, also plan for:
 
 Do not expose the loopback application RPC or test-control endpoint to a LAN or
 the Internet. Static Internet P2P configuration is documented in
-[`internet-p2p.md`](internet-p2p.md). Managed service operation is documented
-separately from compilation and packaging.
+[`internet-p2p.md`](internet-p2p.md). Managed service operation is documented in
+[`ec2-deployment.md`](ec2-deployment.md).
 
 ## Private LAN testing
 
