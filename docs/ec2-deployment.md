@@ -49,7 +49,7 @@ name with the file created on the instance:
 sudo useradd --system --home /var/lib/bbc --shell /usr/sbin/nologin bbc
 sudo install -d -o root -g root -m 0755 /opt/bbc /etc/bbc
 sudo install -d -o bbc -g bbc -m 0700 /var/lib/bbc
-sudo tar -xzf build/linux-gcc-release/bbc-0.1.0-linux-x86_64.tar.gz -C /opt/bbc
+sudo tar --no-same-owner -xzf build/linux-gcc-release/bbc-0.1.0-linux-x86_64.tar.gz -C /opt/bbc
 sudo install -o root -g root -m 0644 /opt/bbc/share/bbc/examples/ec2-node.json /etc/bbc/bbc.json
 sudo install -o root -g root -m 0644 /opt/bbc/share/bbc/systemd/bbc.service /etc/systemd/system/bbc.service
 ```
