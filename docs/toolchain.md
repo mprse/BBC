@@ -114,7 +114,7 @@ On Ubuntu, install the system tools:
 
 ```console
 sudo apt update
-sudo apt install build-essential cmake ninja-build python3 git curl zip unzip tar pkg-config
+sudo apt install build-essential cmake ninja-build python3 git curl zip unzip tar pkg-config autoconf autoconf-archive automake libtool
 ```
 
 Install vcpkg in a user-owned tools directory and prepare its environment:
