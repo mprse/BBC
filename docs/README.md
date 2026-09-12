@@ -4,6 +4,11 @@ This directory describes the current BBC implementation. Each reference
 document is written to stand on its own and links to more specialized material
 when a topic crosses subsystem boundaries.
 
+The separate [v2 design draft](v2/README.md) proposes a simpler CLI, a new
+network bootstrap procedure, participant setup, and illustrated transaction
+flows. Its commands and consensus changes are **not implemented**; the
+reference documents below describe the running system.
+
 ## Start here
 
 - [`glossary.md`](glossary.md) explains abbreviations and domain terms.
